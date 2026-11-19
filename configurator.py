@@ -1,5 +1,6 @@
 from pathlib import Path
 from io import BytesIO
+import base64
 import hashlib
 import pandas as pd
 import streamlit as st
@@ -10,7 +11,7 @@ DATA = Path(__file__).resolve().parent / 'Data' / 'Excel'
 st.set_page_config(page_title='BP100 HE BOM Configurator', layout='wide')
 st.markdown("""
 <style>
-.brand-logo { width: 100%; height: 100px; background-repeat: no-repeat; background-position: center 49%; background-size: 100% auto; mix-blend-mode: multiply; }
+.brand-logo { width: 260px; max-width: 100%; height: 56px; background-color: #fff; background-repeat: no-repeat; background-position: center 42%; background-size: 100% auto; border-radius: 7px; margin-bottom: 22px; }
 .stApp { background: #f3f6f7; color: #233b48; }
 [data-testid="stMainBlockContainer"] { padding-top: 2rem; padding-bottom: 5rem; max-width: 1320px; }
 h1, h2, h3 { color: #102f40 !important; letter-spacing: -.025em; }
@@ -36,7 +37,12 @@ h1, h2, h3 { color: #102f40 !important; letter-spacing: -.025em; }
 @media (max-width: 640px) { .hero { padding: 24px; } .hero h1 { font-size: 1.7rem; } }
 </style>
 """, unsafe_allow_html=True)
-st.markdown('''<div class="hero"><div class="eyebrow">BP 100 HE · Configuration workspace</div>
+logo_file = Path(__file__).resolve().parent / 'steelco-logo.jpg'
+logo_html = ''
+if logo_file.is_file():
+    logo_data = base64.b64encode(logo_file.read_bytes()).decode('ascii')
+    logo_html = f'<div class="brand-logo" role="img" aria-label="SteelcoBelimed, Miele Group Member" style="background-image:url(data:image/jpeg;base64,{logo_data})"></div>'
+st.markdown('''<div class="hero">''' + logo_html + '''<div class="eyebrow">BP 100 HE · Configuration workspace</div>
 <h1>From checklist to reference BOM</h1>
 <p>Upload an order checklist, review its configuration and explore comparable production records.</p></div>
 <div class="workflow"><span><b>01</b> Upload checklist</span><span><b>02</b> Review configuration</span><span><b>03</b> Explore reference BOM</span></div>''', unsafe_allow_html=True)
