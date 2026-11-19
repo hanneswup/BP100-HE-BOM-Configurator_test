@@ -77,11 +77,11 @@ st.info('Confirm the commercial codes from the uploaded checklist. The app will 
 try: data=load()
 except Exception as exc: st.error(f'Unable to load input data: {exc}'); st.stop()
 headers=data['headers']
-st.subheader('2 ? Confirm checklist configuration')
+st.subheader('2 · Confirm checklist configuration')
 st.caption('Select the machine and electrical connection shown on the OCL, then add any selected options. Review these values against the PDF before continuing.')
 all_codes = sorted({text(v) for v in data['assoc']['Commercial Code'] if text(v).startswith('FBCA')})
 variant_codes = [v for v in ['FBCA0000','FBCA0001','FBCA0002'] if v in all_codes]
-variant_names = {'FBCA0000':'BP 100 HE ? manual','FBCA0001':'BP 100 HSE ? semi-automatic','FBCA0002':'BP 100 HAE ? automatic'}
+variant_names = {'FBCA0000':'BP 100 HE · manual','FBCA0001':'BP 100 HSE · semi-automatic','FBCA0002':'BP 100 HAE · automatic'}
 connections = [c for c in all_codes if c.startswith('FBCA02')]
 connection_labels = ['200V 1-phase 50Hz','220V 1-phase 50Hz','230V 1-phase 50Hz','240V 1-phase 50Hz','200V 3-phase 50Hz','220V 3-phase 50Hz','230V 3-phase 50Hz','240V 3-phase 50Hz','380V 3-phase +N 50Hz','400V 3-phase +N 50Hz','415V 3-phase +N 50Hz','110V 1-phase 60Hz','200V 1-phase 60Hz','220V 1-phase 60Hz','230V 1-phase 60Hz','240V 1-phase 60Hz','200V 3-phase 60Hz','208V 3-phase 60Hz UL','220V 3-phase 60Hz','230V 3-phase 60Hz','240V 3-phase 60Hz','380V 3-phase +N 60Hz','400V 3-phase +N 60Hz','415V 3-phase +N 60Hz']
 connection_names = {f'FBCA{201+i:04d}':name for i,name in enumerate(connection_labels)}
@@ -114,7 +114,7 @@ if not reference_candidates:
     st.stop()
 reference_candidates = reference_candidates[:10]
 reference_frame = pd.DataFrame([{'Reference sheet': r, 'Code similarity': score, 'Requested codes absent': ', '.join(missing) or 'None', 'Additional historical codes': ', '.join(extra) or 'None'} for score,r,missing,extra in reference_candidates])
-st.subheader('3 ? Suggested historical references')
+st.subheader('3 · Suggested historical references')
 st.caption('Ranked by shared commercial codes. Similarity is not a technical validation; additional and missing codes must be reviewed.')
 st.dataframe(reference_frame, hide_index=True, use_container_width=True, column_config={'Code similarity':st.column_config.ProgressColumn('Code similarity',min_value=0,max_value=1,format='%.2f')})
 reference_options = [item[1] for item in reference_candidates]
@@ -178,7 +178,7 @@ def prepare_examples(associations, links_data, bom_data):
     descriptions = dict(zip(joined['Item Code'],joined['Item Code Description'].map(text)))
     return [(str(k),code_sets[k],parts[k]) for k in code_sets.index.intersection(parts.index) if code_sets[k] and parts[k]], descriptions
 
-st.subheader('4 ? Machine learning: similar configurations')
+st.subheader('4 · Machine learning: similar configurations')
 st.caption('Local k-nearest-neighbours model: it learns historical examples and compares sets of commercial codes. The selected sheet is excluded from its own neighbours.')
 examples, descriptions = prepare_examples(data['assoc'], data['links'], data['bom'])
 available_codes=sorted({text(x) for x in data['assoc']['Commercial Code'] if text(x).startswith('FBCA')})
@@ -212,7 +212,7 @@ else:
             st.dataframe(suggestions,hide_index=True,use_container_width=True)
             st.caption('Each part is counted once per neighbouring sheet. All linked production orders are included; machine and option quantities are not distinguished. Results are not a generated BOM.')
             st.download_button('Download component observations',suggestions.to_csv(index=False).encode('utf-8-sig'),file_name='similar_sheet_components.csv',mime='text/csv')
-st.subheader('5 ? Model comparison and explanations')
+st.subheader('5 · Model comparison and explanations')
 st.caption('Models train locally on first use and stay cached for this app session. Adjust the model and threshold to update the dashboard.')
 if True:
     try:
@@ -291,7 +291,7 @@ if True:
             c.metric('Commercial codes selected', len(selected_codes))
             st.caption('The baseline and final score are percentages. The individual bars below are additive contributions in log-odds; they are not percentage-point changes.')
             top = contrib.head(12).copy()
-            top['Code and selection'] = top.apply(lambda r: r['Commercial code'] + (' ? selected' if r['Selected'] else ' ? not selected'), axis=1)
+            top['Code and selection'] = top.apply(lambda r: r['Commercial code'] + (' · selected' if r['Selected'] else ' · not selected'), axis=1)
             top['Effect'] = top['Contribution (log-odds)'].map(lambda v: 'Raises score' if v >= 0 else 'Lowers score')
             influence = alt.Chart(top).mark_bar(cornerRadius=3).encode(
                 y=alt.Y('Code and selection:N', sort=top['Code and selection'].tolist(), title=None),
