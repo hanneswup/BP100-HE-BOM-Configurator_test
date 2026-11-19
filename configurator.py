@@ -1,6 +1,5 @@
 from pathlib import Path
 from io import BytesIO
-import base64
 import hashlib
 import pandas as pd
 import streamlit as st
@@ -12,32 +11,35 @@ st.set_page_config(page_title='BP100 HE BOM Configurator', layout='wide')
 st.markdown("""
 <style>
 .brand-logo { width: 100%; height: 100px; background-repeat: no-repeat; background-position: center 49%; background-size: 100% auto; mix-blend-mode: multiply; }
-.stApp { background: #f5f8fa; color: #18334b; }
-[data-testid="stMainBlockContainer"] { padding-top: 2rem; max-width: 1500px; }
-h1, h2, h3 { color: #123d68 !important; }
-[data-testid="stHeader"] { background: rgba(245,248,250,.96); }
-[data-testid="stExpander"] { background: #fff; border: 1px solid #d8e4eb; border-radius: 9px; }
-[data-testid="stMetric"] { background: #fff; border: 1px solid #d8e4eb; border-top: 3px solid #118d89; border-radius: 7px; padding: 14px 16px; }
-[data-testid="stMetricLabel"] { color: #526d7f; }
-[data-testid="stMetricValue"] { color: #074f82; }
-.stTabs [data-baseweb="tab-list"] { gap: 6px; border-bottom: 1px solid #cddde5; }
-.stTabs [data-baseweb="tab"] { color: #3b6179; padding: 10px 16px; }
+.stApp { background: #f3f6f7; color: #233b48; }
+[data-testid="stMainBlockContainer"] { padding-top: 2rem; padding-bottom: 5rem; max-width: 1320px; }
+h1, h2, h3 { color: #102f40 !important; letter-spacing: -.025em; }
+[data-testid="stHeader"] { background: rgba(243,246,247,.96); }
+.hero { background: #123b4b; border-radius: 16px; padding: 32px 36px; color: #fff; margin-bottom: 6px; }
+.hero .eyebrow { color: #91d6ca; font-size: 12px; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; }
+.hero h1 { color: #fff !important; font-size: 2.25rem; margin: 8px 0; }
+.hero p { color: #d3e4e6; font-size: 1rem; max-width: 750px; margin: 0; }
+.workflow { display: flex; gap: 12px; flex-wrap: wrap; margin: 8px 0 4px; }
+.workflow span { background: #fff; color: #47616b; border: 1px solid #dfe9e9; border-radius: 8px; padding: 9px 13px; font-size: .83rem; font-weight: 600; }
+.workflow b { color: #00867e; margin-right: 7px; }
+[data-testid="stExpander"] { background: #fff; border: 1px solid #dce7e8; border-radius: 12px; }
+[data-testid="stMetric"] { background: #fff; border: 1px solid #dce7e8; border-radius: 12px; padding: 19px; box-shadow: 0 2px 10px rgba(22,62,72,.04); }
+[data-testid="stMetricLabel"] { color: #526d78; }
+[data-testid="stMetricValue"] { color: #087b77; }
+.stTabs [data-baseweb="tab-list"] { gap: 4px; border-bottom: 1px solid #d5e1e3; }
+.stTabs [data-baseweb="tab"] { color: #536d78; padding: 10px 16px; }
 .stTabs [aria-selected="true"] { color: #007c79 !important; border-bottom-color: #00958e !important; }
-.stDownloadButton button { background: #007f82; color: white; border: 1px solid #007f82; border-radius: 6px; font-weight: 600; }
-.stDownloadButton button:hover { background: #00686b; color: white; border-color: #00686b; }
-[data-testid="stFileUploader"] section { background: #eef7f8; border: 1px dashed #70a9b2; border-radius: 8px; }
-[data-testid="stAlert"] { border-radius: 7px; }
+.stDownloadButton button { background: #007f79; color: white; border: 1px solid #007f79; border-radius: 8px; font-weight: 600; }
+.stDownloadButton button:hover { background: #006862; color: white; border-color: #006862; }
+[data-testid="stFileUploader"] section { background: #f2faf8; border: 1px dashed #85bcb5; border-radius: 10px; }
+[data-testid="stAlert"] { border-radius: 10px; }
+@media (max-width: 640px) { .hero { padding: 24px; } .hero h1 { font-size: 1.7rem; } }
 </style>
 """, unsafe_allow_html=True)
-brand_image = Path(__file__).resolve().parent.parent / 'images.jpg'
-title_column, brand_column = st.columns([3, 2], vertical_alignment='center')
-with title_column:
-    st.title('BP100 HE BOM Configurator')
-    st.caption('Proof of concept - Local historical data')
-with brand_column:
-    if brand_image.is_file():
-        image_data = base64.b64encode(brand_image.read_bytes()).decode('ascii')
-        st.markdown(f'<div class="brand-logo" role="img" aria-label="SteelcoBelimed, Miele Group Member" style="background-image: url(data:image/jpeg;base64,{image_data})"></div>', unsafe_allow_html=True)
+st.markdown('''<div class="hero"><div class="eyebrow">BP 100 HE · Configuration workspace</div>
+<h1>From checklist to reference BOM</h1>
+<p>Upload an order checklist, review its configuration and explore comparable production records.</p></div>
+<div class="workflow"><span><b>01</b> Upload checklist</span><span><b>02</b> Review configuration</span><span><b>03</b> Explore reference BOM</span></div>''', unsafe_allow_html=True)
 
 @st.cache_data(show_spinner='Loading source files...')
 def load():
@@ -76,8 +78,8 @@ def prepare_examples(associations, links_data, bom_data):
 pdf_ready = False
 detected_codes = set()
 visual_codes = None
-st.info('Reconstruct a recorded production BOM and routing from a historical production sheet. Review the source data before use; this is not an approved new BOM.')
-with st.expander('1 · Upload order checklist',expanded=True):
+st.caption('Proof of concept · Uses historical production records; results are not an approved BOM.')
+with st.expander('01 · Upload order checklist',expanded=True):
     f=st.file_uploader('Drag and drop a checklist PDF',type='pdf')
     if f:
         try:
@@ -96,9 +98,10 @@ with st.expander('1 · Upload order checklist',expanded=True):
             if len(reader.pages) == 0: raise ValueError('PDF has no pages')
             pdf_ready = True
             st.success(f'{f.name}: {len(reader.pages)} pages read')
-            if values: st.dataframe(pd.DataFrame(values,columns=['PDF field','Value']),hide_index=True)
-            else: st.warning('No interactive fields detected. Flattened or scanned checklists require manual review; selections are not inferred from the printed list of options.')
-            with st.expander('Extracted text'): st.text_area('PDF text',content,height=200,disabled=True)
+            if values:
+                with st.expander('View PDF form fields'):
+                    st.dataframe(pd.DataFrame(values,columns=['PDF field','Value']),hide_index=True,use_container_width=True)
+            with st.expander('View extracted PDF text'): st.text_area('PDF text',content,height=200,disabled=True)
         except Exception as exc: st.error(f'Cannot read PDF: {exc}')
 if not pdf_ready:
     st.info('Upload a readable order checklist PDF to continue.')
@@ -111,7 +114,7 @@ else:
 try: data=load()
 except Exception as exc: st.error(f'Unable to load input data: {exc}'); st.stop()
 headers=data['headers']
-st.subheader('Checklist configuration')
+st.subheader('02 · Review configuration')
 all_codes = sorted({text(v) for v in data['assoc']['Commercial Code'] if text(v).startswith('FBCA')})
 if visual_codes is not None and visual_codes.difference(all_codes):
     st.error('Detected codes are missing from the available historical data: ' + ', '.join(sorted(visual_codes.difference(all_codes))) + '. The configuration cannot be processed automatically.')
@@ -145,7 +148,7 @@ if not selected_variant or not selected_connection:
     st.info('Select the machine variant and electrical connection to see similar historical orders.')
     st.stop()
 selected_codes = [selected_variant, selected_connection, *selected_options]
-st.subheader('How reliable is the component prediction?')
+st.subheader('Historical model performance')
 try:
     from ml_models import train_models
     examples, descriptions = prepare_examples(data['assoc'], data['links'], data['bom'])
@@ -175,7 +178,7 @@ if not reference_candidates:
     st.stop()
 reference_candidates = reference_candidates[:10]
 reference_frame = pd.DataFrame([{'Reference sheet': r, 'Code similarity': score, 'Requested codes absent': ', '.join(missing) or 'None', 'Additional historical codes': ', '.join(extra) or 'None'} for score,r,missing,extra in reference_candidates])
-st.subheader('3 · Suggested historical references')
+st.subheader('03 · Choose a reference')
 st.caption('Ranked by shared commercial codes. Similarity is not a technical validation; additional and missing codes must be reviewed.')
 st.dataframe(reference_frame, hide_index=True, use_container_width=True, column_config={'Code similarity':st.column_config.ProgressColumn('Code similarity',min_value=0,max_value=1,format='%.2f')})
 reference_options = [item[1] for item in reference_candidates]
@@ -196,8 +199,8 @@ if not roots: issues.append({'Category':'Missing engineering BOM','Reference':ma
 diagnostics=pd.DataFrame(issues,columns=['Category','Reference','Next step'])
 a,b,c,d=st.columns(4); a.metric('Machine',machine); b.metric('Production orders',len(ids)); c.metric('BOM lines',len(bom)); d.metric('Routing lines',len(routing))
 st.caption(f"Revision {text(h['Revision'])} · {text(h['Machine Code Description'])}. Quantities remain per production order.")
-st.subheader('3 · Reconstructed output')
-tabs=st.tabs(['Production BOM','Routing','Configuration and notes','Engineering BOM','Diagnostics','Scope'])
+st.subheader('Reference details')
+tabs=st.tabs(['Production BOM','Routing','Configuration & notes','Engineering BOM','Diagnostics','Scope'])
 with tabs[0]:
     if bom.empty: st.warning('No production BOM found for the linked orders.')
     st.dataframe(bom,hide_index=True,use_container_width=True); st.caption('Source: Prod Ord BOMs linked through production orders.')
@@ -220,7 +223,13 @@ with tabs[5]:
     st.write('This prototype uses sheet-specific commercial associations and recorded production BOMs. It does not yet generate BOMs for unseen configurations, provide an editable rule engine or connect to SAP. Historical notes may be order-specific.')
     st.write('Accuracy against blind cases and a complete AS400 correction list have not been established.')
 
-st.subheader('4 · Machine learning: similar configurations')
+output=BytesIO()
+with pd.ExcelWriter(output,engine='openpyxl') as writer:
+    for name,df in {'BOM':bom,'Routing':routing,'Orders':links,'Commercial codes':association,'Configuration':config,'Notes':notes,'Engineering BOM':technical,'Diagnostics':diagnostics}.items(): df.to_excel(writer,sheet_name=name,index=False)
+st.download_button('Download reference workbook',output.getvalue(),file_name='BP100_HE_'+sheet.replace('/','-')+'.xlsx',mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+st.divider()
+st.subheader('Explore similar configurations')
 st.caption('Local k-nearest-neighbours model: it learns historical examples and compares sets of commercial codes. The selected sheet is excluded from its own neighbours.')
 examples, descriptions = prepare_examples(data['assoc'], data['links'], data['bom'])
 available_codes=sorted({text(x) for x in data['assoc']['Commercial Code'] if text(x).startswith('FBCA')})
@@ -254,7 +263,7 @@ else:
             st.dataframe(suggestions,hide_index=True,use_container_width=True)
             st.caption('Each part is counted once per neighbouring sheet. All linked production orders are included; machine and option quantities are not distinguished. Results are not a generated BOM.')
             st.download_button('Download component observations',suggestions.to_csv(index=False).encode('utf-8-sig'),file_name='similar_sheet_components.csv',mime='text/csv')
-st.subheader('5 · Model comparison and explanations')
+st.subheader('Model comparison and explanations')
 st.caption('Models train locally on first use and stay cached for this app session. Adjust the model and threshold to update the dashboard.')
 if True:
     try:
@@ -350,7 +359,3 @@ if True:
     except Exception as exc:
         st.error(f'Model training or explanation failed: {exc}')
 
-output=BytesIO()
-with pd.ExcelWriter(output,engine='openpyxl') as writer:
-    for name,df in {'BOM':bom,'Routing':routing,'Orders':links,'Commercial codes':association,'Configuration':config,'Notes':notes,'Engineering BOM':technical,'Diagnostics':diagnostics}.items(): df.to_excel(writer,sheet_name=name,index=False)
-st.download_button('Download reconstructed workbook',output.getvalue(),file_name='BP100_HE_'+sheet.replace('/','-')+'.xlsx',mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
