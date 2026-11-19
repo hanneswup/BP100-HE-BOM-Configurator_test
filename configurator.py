@@ -5,7 +5,7 @@ import pandas as pd
 import streamlit as st
 from pypdf import PdfReader
 
-DATA = Path(__file__).resolve().parent.parent / 'Data' / 'Excel'
+DATA = Path(__file__).resolve().parent / 'Data' / 'Excel'
 st.set_page_config(page_title='BP100 HE BOM Configurator', layout='wide')
 st.markdown("""
 <style>
