@@ -1,9 +1,11 @@
 from pathlib import Path
 from io import BytesIO
 import base64
+import hashlib
 import pandas as pd
 import streamlit as st
 from pypdf import PdfReader
+from checklist_codes import extract_codes
 
 DATA = Path(__file__).resolve().parent / 'Data' / 'Excel'
 st.set_page_config(page_title='BP100 HE BOM Configurator', layout='wide')
@@ -53,6 +55,7 @@ def text(v): return '' if pd.isna(v) else str(v).strip()
 def rows(df,col,values): return df[df[col].map(text).isin(values)].copy()
 
 pdf_ready = False
+detected_codes = set()
 st.info('Reconstruct a recorded production BOM and routing from a historical production sheet. Review the source data before use; this is not an approved new BOM.')
 with st.expander('1 · Upload order checklist',expanded=True):
     f=st.file_uploader('Drag and drop a checklist PDF',type='pdf')
@@ -62,6 +65,7 @@ with st.expander('1 · Upload order checklist',expanded=True):
             if reader.is_encrypted and not reader.decrypt(''): raise ValueError('Password-protected PDF')
             content='\n'.join(p.extract_text() or '' for p in reader.pages)
             fields=reader.get_fields() or {}
+            detected_codes=extract_codes(fields)
             values=[(k,text(v.get('/V'))) for k,v in fields.items() if v.get('/V') is not None and text(v.get('/V')) not in ('','/Off')]
             if len(reader.pages) == 0: raise ValueError('PDF has no pages')
             pdf_ready = True
@@ -73,7 +77,7 @@ with st.expander('1 · Upload order checklist',expanded=True):
 if not pdf_ready:
     st.info('Upload a readable order checklist PDF to continue.')
     st.stop()
-st.info('Confirm the commercial codes from the uploaded checklist. The app will rank historical references automatically; PDF checkmarks are not yet read automatically.')
+st.info('Review the prefilled commercial codes against the checklist. Only explicit codes in interactive field values or selected field names are detected; unmapped controls and scanned checkmarks require manual entry.')
 try: data=load()
 except Exception as exc: st.error(f'Unable to load input data: {exc}'); st.stop()
 headers=data['headers']
@@ -88,12 +92,22 @@ connection_names = {f'FBCA{201+i:04d}':name for i,name in enumerate(connection_l
 option_labels = ['Wall installation for toilet bowl connection','LCD display control panel','High pressure washing technology','AISI 316L chamber','Device main switch','HEPA H14 air filtering','Electrical heated drying and cooling','Chemical dosing pump','Infra-red switch (LED)','Infra-red switch (LCD)','Emergency stop button','ST1 external printer','RS232 port','Independent monitoring system','Manual emptier conversion kit','Flushing kit','USB predisposition']
 option_names = {f'FBCA{1000+i:04d}':name for i,name in enumerate(option_labels)}
 options = [c for c in all_codes if c.startswith('FBCA1')]
+pdf_key = hashlib.sha256(f.getvalue()).hexdigest()
+detected_variants = sorted(detected_codes.intersection(variant_codes))
+detected_connections = sorted(detected_codes.intersection(connections))
+detected_options = sorted(detected_codes.intersection(options))
+if detected_codes:
+    st.caption('Explicit codes detected in PDF fields: ' + ', '.join(sorted(detected_codes)))
+if len(detected_variants) > 1 or len(detected_connections) > 1:
+    st.warning('Multiple variants or electrical connections were found. Choose the correct values manually.')
+if not detected_codes:
+    st.warning('No explicit commercial codes could be mapped from the interactive PDF fields. Select the configuration manually; printed option lists are not treated as selections.')
 col_variant,col_power = st.columns(2)
 with col_variant:
-    selected_variant = st.selectbox('Machine variant from checklist',variant_codes,index=None,format_func=lambda c: variant_names.get(c,c)+' ('+c+')',placeholder='Select the variant')
+    selected_variant = st.selectbox('Machine variant from checklist',variant_codes,index=variant_codes.index(detected_variants[0]) if len(detected_variants)==1 else None,format_func=lambda c: variant_names.get(c,c)+' ('+c+')',placeholder='Select the variant',key='variant_'+pdf_key)
 with col_power:
-    selected_connection = st.selectbox('Electrical connection code',connections,index=None,placeholder='Select the electrical connection',format_func=lambda c: connection_names.get(c,'Unknown connection')+' ('+c+')')
-selected_options = st.multiselect('Selected option codes',options,format_func=lambda c: option_names.get(c,'Other option')+' ('+c+')',help='Only select options marked on the uploaded checklist.')
+    selected_connection = st.selectbox('Electrical connection code',connections,index=connections.index(detected_connections[0]) if len(detected_connections)==1 else None,placeholder='Select the electrical connection',format_func=lambda c: connection_names.get(c,'Unknown connection')+' ('+c+')',key='connection_'+pdf_key)
+selected_options = st.multiselect('Selected option codes',options,default=detected_options,format_func=lambda c: option_names.get(c,'Other option')+' ('+c+')',help='Only select options marked on the uploaded checklist.',key='options_'+pdf_key)
 if not selected_variant or not selected_connection:
     st.info('Select the machine variant and electrical connection to see similar historical orders.')
     st.stop()
