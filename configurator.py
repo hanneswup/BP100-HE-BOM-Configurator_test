@@ -54,6 +54,25 @@ def load():
 def text(v): return '' if pd.isna(v) else str(v).strip()
 def rows(df,col,values): return df[df[col].map(text).isin(values)].copy()
 
+@st.cache_data(show_spinner='Preparing historical examples...')
+def prepare_examples(associations, links_data, bom_data):
+    ac = associations.copy()
+    ac['Production Sheet'] = ac['Production Sheet'].map(text)
+    ac['Commercial Code'] = ac['Commercial Code'].map(text)
+    ac = ac[ac['Commercial Code'].str.startswith('FBCA')]
+    code_sets = ac.groupby('Production Sheet')['Commercial Code'].agg(lambda x: frozenset(x))
+    l = links_data.copy()
+    l['Production Sheet'] = l['Production Sheet'].map(text)
+    l['Production Order'] = l['Production Order'].map(text)
+    b = bom_data.copy()
+    b['Production Order'] = b['Production Order'].map(text)
+    b['Item Code'] = b['Item Code'].map(text)
+    joined = l[['Production Sheet','Production Order']].drop_duplicates().merge(b[['Production Order','Item Code','Item Code Description']],on='Production Order',how='inner')
+    joined = joined[joined['Item Code'] != '']
+    parts = joined.groupby('Production Sheet')['Item Code'].agg(lambda x: frozenset(x))
+    descriptions = dict(zip(joined['Item Code'],joined['Item Code Description'].map(text)))
+    return [(str(k),code_sets[k],parts[k]) for k in code_sets.index.intersection(parts.index) if code_sets[k] and parts[k]], descriptions
+
 pdf_ready = False
 detected_codes = set()
 visual_codes = None
@@ -126,6 +145,20 @@ if not selected_variant or not selected_connection:
     st.info('Select the machine variant and electrical connection to see similar historical orders.')
     st.stop()
 selected_codes = [selected_variant, selected_connection, *selected_options]
+st.subheader('How reliable is the component prediction?')
+try:
+    from ml_models import train_models
+    examples, descriptions = prepare_examples(data['assoc'], data['links'], data['bom'])
+    historical_model = train_models(examples)
+    historical_metrics = historical_model['metrics']['XGBoost']
+    precision_card, recall_card, match_card = st.columns(3)
+    precision_card.metric('Predicted parts found', f"{historical_metrics['Precision']:.0%}", help='Of model-predicted components, the share also found in historical test orders.')
+    recall_card.metric('Historical parts found', f"{historical_metrics['Recall']:.0%}", help='Of the evaluated components actually present in historical test orders, the share predicted by the model.')
+    match_card.metric('Exact match of evaluated parts', f"{historical_metrics['Exact match']:.0%}", help='Share of historical test orders where all evaluated component-presence decisions matched.')
+    st.caption(f"Historical XGBoost test on {historical_model['test_count']} held-out sheets, covering {len(historical_model['targets'])} modeled component types at a 50% threshold. Related orders may still appear in training and test sets.")
+    st.warning('These are aggregate historical component-presence results, not a probability that this OCL produces a correct or complete BOM. They exclude quantities and unmodeled components. The historical reference BOM below is not a generated BOM.')
+except Exception as exc:
+    st.info(f'Historical model metrics are currently unavailable: {exc}')
 query = set(selected_codes)
 association_data = data['assoc'].copy()
 association_data['Production Sheet'] = association_data['Production Sheet'].map(text)
@@ -186,25 +219,6 @@ with tabs[4]:
 with tabs[5]:
     st.write('This prototype uses sheet-specific commercial associations and recorded production BOMs. It does not yet generate BOMs for unseen configurations, provide an editable rule engine or connect to SAP. Historical notes may be order-specific.')
     st.write('Accuracy against blind cases and a complete AS400 correction list have not been established.')
-
-@st.cache_data(show_spinner='Preparing historical examples...')
-def prepare_examples(associations, links_data, bom_data):
-    ac = associations.copy()
-    ac['Production Sheet'] = ac['Production Sheet'].map(text)
-    ac['Commercial Code'] = ac['Commercial Code'].map(text)
-    ac = ac[ac['Commercial Code'].str.startswith('FBCA')]
-    code_sets = ac.groupby('Production Sheet')['Commercial Code'].agg(lambda x: frozenset(x))
-    l = links_data.copy()
-    l['Production Sheet'] = l['Production Sheet'].map(text)
-    l['Production Order'] = l['Production Order'].map(text)
-    b = bom_data.copy()
-    b['Production Order'] = b['Production Order'].map(text)
-    b['Item Code'] = b['Item Code'].map(text)
-    joined = l[['Production Sheet','Production Order']].drop_duplicates().merge(b[['Production Order','Item Code','Item Code Description']],on='Production Order',how='inner')
-    joined = joined[joined['Item Code'] != '']
-    parts = joined.groupby('Production Sheet')['Item Code'].agg(lambda x: frozenset(x))
-    descriptions = dict(zip(joined['Item Code'],joined['Item Code Description'].map(text)))
-    return [(str(k),code_sets[k],parts[k]) for k in code_sets.index.intersection(parts.index) if code_sets[k] and parts[k]], descriptions
 
 st.subheader('4 · Machine learning: similar configurations')
 st.caption('Local k-nearest-neighbours model: it learns historical examples and compares sets of commercial codes. The selected sheet is excluded from its own neighbours.')
