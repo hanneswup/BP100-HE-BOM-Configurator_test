@@ -2,6 +2,7 @@ from pathlib import Path
 from io import BytesIO
 import base64
 import hashlib
+import re
 import pandas as pd
 import streamlit as st
 from pypdf import PdfReader
@@ -93,6 +94,11 @@ with st.expander('01 · Upload order checklist',expanded=True):
             reader=PdfReader(BytesIO(f.getvalue()))
             if reader.is_encrypted and not reader.decrypt(''): raise ValueError('Password-protected PDF')
             content='\n'.join(p.extract_text() or '' for p in reader.pages)
+            header_text = ' '.join((reader.pages[0].extract_text() or '').split()) if reader.pages else ''
+            family_match = re.search(r'BP\s*100\s*(HXL|HSER|HLA|HE|H)\s*Rev\.', header_text, re.IGNORECASE)
+            if family_match and family_match.group(1).upper() != 'HE':
+                st.error('This checklist is for BP 100 ' + family_match.group(1).upper() + '. The available BOM data and models currently support BP 100 HE only.')
+                st.stop()
             fields=reader.get_fields() or {}
             detected_codes=extract_codes(fields)
             try:
@@ -155,6 +161,37 @@ if not selected_variant or not selected_connection:
     st.info('Select the machine variant and electrical connection to see similar historical orders.')
     st.stop()
 selected_codes = [selected_variant, selected_connection, *selected_options]
+st.subheader('BOM candidate from historical orders')
+st.caption('Components and quantities observed in similar orders. Review every line before use.')
+try:
+    from bom_proposal import build_examples, propose, backtest
+    @st.cache_data(show_spinner='Preparing and testing historical BOM candidates...')
+    def prepare_bom_candidate_data(associations, links_data, bom_data):
+        records, descriptions = build_examples(associations, links_data, bom_data)
+        return records, descriptions, backtest(records, descriptions)
+    bom_records, bom_descriptions, evaluation = prepare_bom_candidate_data(data['assoc'], data['links'], data['bom'])
+    candidate, candidate_references = propose(set(selected_codes), bom_records, bom_descriptions)
+    if candidate_references:
+        candidate_df = pd.DataFrame(candidate)
+        st.warning('Exploratory candidate, not an approved or complete production BOM. Quantities are totals across the linked orders of each reference; order and machine quantities may differ. Verify each component and quantity against engineering data.')
+        st.caption('A component is included when it appears in at least half of up to five same-variant historical references. The suggested quantity is the most common observed total; quantity agreement and range show disagreements.')
+        st.dataframe(candidate_df, hide_index=True, use_container_width=True)
+        st.download_button('Download BOM candidate as CSV', candidate_df.to_csv(index=False).encode('utf-8-sig'), file_name='BP100_HE_BOM_candidate.csv', mime='text/csv')
+        with st.expander('Show historical references used for this candidate'):
+            st.dataframe(pd.DataFrame([{'Production sheet': row['sheet'], 'Code similarity': round(score*100, 1), 'Missing requested codes': ', '.join(sorted(set(selected_codes)-row['codes'])), 'Additional codes': ', '.join(sorted(row['codes']-set(selected_codes))), 'Production orders': ', '.join(sorted(row['orders']))} for score, row in candidate_references]), hide_index=True, use_container_width=True)
+    else:
+        st.info('No usable historical BOMs for the selected machine variant were found.')
+    def show_percent(value):
+        return f'{value:.0%}' if value is not None else '—'
+    st.markdown('**Historical test of this candidate method**')
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric('Suggested parts present', show_percent(evaluation['precision']), help='Share of suggested component types present in the held-out production BOMs.')
+    m2.metric('Actual parts found', show_percent(evaluation['recall']), help='Share of component types in the held-out BOMs that were suggested.')
+    m3.metric('Quantities correct', show_percent(evaluation['quantity_accuracy']), help='Among correctly suggested components, share with an exactly matching summed quantity.')
+    m4.metric('Complete BOM and quantities', show_percent(evaluation['exact_quantity']), help='Share of covered test sheets where every component and its summed quantity matched exactly.')
+    st.caption(f"Test: {evaluation['covered']} of {evaluation['test']} held-out sheets had comparable training references ({evaluation['train']} training sheets). Sheets with missing linked BOMs, missing quantities or negative quantities are excluded. Shared production orders and identical code sets are kept in the same split; other relationships may remain. Results are historical aggregates, not a probability for this checklist.")
+except Exception as exc:
+    st.warning(f'BOM candidate or its historical test could not be prepared: {exc}')
 st.subheader('Historical model performance')
 try:
     from ml_models import train_models
