@@ -11,30 +11,31 @@ DATA = Path(__file__).resolve().parent / 'Data' / 'Excel'
 st.set_page_config(page_title='BP100 HE BOM Configurator', layout='wide')
 st.markdown("""
 <style>
-.brand-logo { width: 260px; max-width: 100%; height: 56px; background-color: #fff; background-repeat: no-repeat; background-position: center 42%; background-size: 100% auto; border-radius: 7px; margin-bottom: 22px; }
+.brand-logo { width: 440px; max-width: 100%; height: 76px; background-repeat: no-repeat; background-position: center 42%; background-size: 100% auto; flex: 0 1 440px; }
 .stApp { background: #f3f6f7; color: #233b48; }
 [data-testid="stMainBlockContainer"] { padding-top: 2rem; padding-bottom: 5rem; max-width: 1320px; }
 h1, h2, h3 { color: #102f40 !important; letter-spacing: -.025em; }
 [data-testid="stHeader"] { background: rgba(243,246,247,.96); }
-.hero { background: #123b4b; border-radius: 16px; padding: 32px 36px; color: #fff; margin-bottom: 6px; }
-.hero .eyebrow { color: #91d6ca; font-size: 12px; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; }
-.hero h1 { color: #fff !important; font-size: 2.25rem; margin: 8px 0; }
-.hero p { color: #d3e4e6; font-size: 1rem; max-width: 750px; margin: 0; }
+.hero { background: #fff; border-top: 7px solid #284a98; border-image: linear-gradient(90deg, #284a98 35%, #2f886b) 1; padding: 32px 36px; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between; gap: 30px; }
+.hero-copy { flex: 1 1 420px; }
+.hero .eyebrow { color: #2d886b; font-size: 12px; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; }
+.hero h1 { color: #254992 !important; font-size: 2.25rem; margin: 8px 0; }
+.hero p { color: #536578; font-size: 1rem; max-width: 750px; margin: 0; }
 .workflow { display: flex; gap: 12px; flex-wrap: wrap; margin: 8px 0 4px; }
 .workflow span { background: #fff; color: #47616b; border: 1px solid #dfe9e9; border-radius: 8px; padding: 9px 13px; font-size: .83rem; font-weight: 600; }
-.workflow b { color: #00867e; margin-right: 7px; }
+.workflow b { color: #2f886b; margin-right: 7px; }
 [data-testid="stExpander"] { background: #fff; border: 1px solid #dce7e8; border-radius: 12px; }
 [data-testid="stMetric"] { background: #fff; border: 1px solid #dce7e8; border-radius: 12px; padding: 19px; box-shadow: 0 2px 10px rgba(22,62,72,.04); }
 [data-testid="stMetricLabel"] { color: #526d78; }
-[data-testid="stMetricValue"] { color: #087b77; }
+[data-testid="stMetricValue"] { color: #284a98; }
 .stTabs [data-baseweb="tab-list"] { gap: 4px; border-bottom: 1px solid #d5e1e3; }
 .stTabs [data-baseweb="tab"] { color: #536d78; padding: 10px 16px; }
 .stTabs [aria-selected="true"] { color: #007c79 !important; border-bottom-color: #00958e !important; }
-.stDownloadButton button { background: #007f79; color: white; border: 1px solid #007f79; border-radius: 8px; font-weight: 600; }
-.stDownloadButton button:hover { background: #006862; color: white; border-color: #006862; }
+.stDownloadButton button { background: #2f886b; color: white; border: 1px solid #2f886b; border-radius: 8px; font-weight: 600; }
+.stDownloadButton button:hover { background: #246e57; color: white; border-color: #246e57; }
 [data-testid="stFileUploader"] section { background: #f2faf8; border: 1px dashed #85bcb5; border-radius: 10px; }
 [data-testid="stAlert"] { border-radius: 10px; }
-@media (max-width: 640px) { .hero { padding: 24px; } .hero h1 { font-size: 1.7rem; } }
+@media (max-width: 800px) { .hero { padding: 24px; flex-wrap: wrap; } .hero-copy { flex-basis: 100%; } .brand-logo { flex-basis: 340px; height: 65px; } .hero h1 { font-size: 1.7rem; } }
 </style>
 """, unsafe_allow_html=True)
 logo_file = Path(__file__).resolve().parent / 'steelco-logo.jpg'
@@ -42,9 +43,9 @@ logo_html = ''
 if logo_file.is_file():
     logo_data = base64.b64encode(logo_file.read_bytes()).decode('ascii')
     logo_html = f'<div class="brand-logo" role="img" aria-label="SteelcoBelimed, Miele Group Member" style="background-image:url(data:image/jpeg;base64,{logo_data})"></div>'
-st.markdown('''<div class="hero">''' + logo_html + '''<div class="eyebrow">BP 100 HE · Configuration workspace</div>
+st.markdown('''<div class="hero"><div class="hero-copy"><div class="eyebrow">BP 100 HE · Configuration workspace</div>
 <h1>From checklist to reference BOM</h1>
-<p>Upload an order checklist, review its configuration and explore comparable production records.</p></div>
+<p>Upload an order checklist, review its configuration and explore comparable production records.</p></div>''' + logo_html + '''</div>
 <div class="workflow"><span><b>01</b> Upload checklist</span><span><b>02</b> Review configuration</span><span><b>03</b> Explore reference BOM</span></div>''', unsafe_allow_html=True)
 
 @st.cache_data(show_spinner='Loading source files...')
