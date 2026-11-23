@@ -142,14 +142,13 @@ if input_mode == 'Enter configuration manually':
 elif input_mode == 'Purchase order without checklist':
     st.caption('If the purchase order does not specify a required selection, obtain clarification before proceeding. No unspecified option is inferred.')
 elif visual_codes is not None:
-    st.success('Configuration read from the checklist: ' + ', '.join(sorted(visual_codes)))
-    st.caption('Automatic recognition is limited to supported BP 100 HE revision 07/08 layouts. Verify the result before using it.')
+    st.success('Supported configuration codes read from the checklist: ' + ', '.join(sorted(visual_codes)))
+    st.caption('Only supported BP 100 HE revision 07/08 code selections are checked. Other checklist details and notes are not automatically captured; verify the detected selections before use.')
 else:
     st.warning('Automatic checkbox recognition was not reliable for this PDF. Select the configuration below.')
 try: data=load()
 except Exception as exc: st.error(f'Unable to load input data: {exc}'); st.stop()
 headers=data['headers']
-st.subheader('02 · Review configuration')
 all_codes = sorted({text(v) for v in data['assoc']['Commercial Code'] if text(v).startswith('FBCA')})
 if visual_codes is not None and visual_codes.difference(all_codes):
     st.error('Detected codes are missing from the available historical data: ' + ', '.join(sorted(visual_codes.difference(all_codes))) + '. The configuration cannot be processed automatically.')
@@ -166,13 +165,16 @@ pdf_key = hashlib.sha256(f.getvalue()).hexdigest() if f else ('po_' + hashlib.sh
 detected_variants = sorted(detected_codes.intersection(variant_codes))
 detected_connections = sorted(detected_codes.intersection(connections))
 detected_options = sorted(detected_codes.intersection(options))
+auto_recognized = visual_codes is not None and len(detected_variants) == 1 and len(detected_connections) == 1 and set(detected_codes).issubset(set(variant_codes) | set(connections) | set(options))
+if not auto_recognized:
+    st.subheader('02 · Review configuration')
 if detected_codes:
     st.caption('Codes detected from the uploaded checklist: ' + ', '.join(sorted(detected_codes)))
 if len(detected_variants) > 1 or len(detected_connections) > 1:
     st.warning('Multiple variants or electrical connections were found. Choose the correct values manually.')
 if not detected_codes and input_mode == 'Upload checklist PDF':
     st.warning('No explicit commercial codes could be mapped from the interactive PDF fields. Select the configuration manually; printed option lists are not treated as selections.')
-with st.expander('Enter or change checklist selections', expanded=True):
+with st.expander('Change or add checklist selections' if auto_recognized else 'Enter or change checklist selections', expanded=not auto_recognized):
     st.caption('Enter or change selections from the available order information. The PDF itself is not modified; the selections below determine the results shown by this app.')
     col_variant,col_power = st.columns(2)
     with col_variant:

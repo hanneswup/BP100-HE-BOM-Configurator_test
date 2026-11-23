@@ -54,6 +54,10 @@ def extract_visual_codes(pdf_bytes):
         return None
     if optional in positions:
         codes.append(optional)
+    # Do not claim a complete supported selection when the document lists
+    # additional commercial codes for which we do not inspect a checkbox.
+    if {code.upper() for code in CODE.findall(' '.join(pages))} - set(codes):
+        return None
     marked = set()
     for page_number in sorted({positions[c][0] for c in codes}):
         page = document[page_number]
