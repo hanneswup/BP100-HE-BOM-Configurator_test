@@ -2,6 +2,7 @@ from pathlib import Path
 from io import BytesIO
 import base64
 import hashlib
+import json
 import re
 import pandas as pd
 import streamlit as st
@@ -92,8 +93,13 @@ with st.expander('Pilot scope and data sources'):
     st.markdown('**Current data:** local Excel exports of historical engineering BOMs, production BOMs and routings. This app does not currently connect to AS/400 or SAP. AS/400 is the existing ERP; its replacement by SAP is planned for 1 August 2027, with the scope of that date and the future interface still to be confirmed.')
     st.markdown('**Review before release:** check that the confirmed OCL configuration matches the applicable approved rules, and that the BOM and routing match those rules. Approved rules, quantities per machine and the release process are not yet established in this prototype.')
     st.caption('Project scope and review requirements include one survey response and require confirmation with the responsible teams.')
-with st.expander('01 · Upload order checklist',expanded=True):
-    f=st.file_uploader('Drag and drop a checklist PDF',type='pdf')
+st.subheader('01 · Choose how to enter the checklist')
+input_mode = st.radio('Checklist input', ['Upload checklist PDF', 'Enter configuration manually'], horizontal=True, label_visibility='collapsed')
+with st.expander('Upload order checklist',expanded=input_mode == 'Upload checklist PDF'):
+    f=st.file_uploader('Drag and drop a checklist PDF',type='pdf', disabled=input_mode != 'Upload checklist PDF')
+    if input_mode != 'Upload checklist PDF':
+        f = None
+        pdf_ready = True
     if f:
         try:
             reader=PdfReader(BytesIO(f.getvalue()))
@@ -124,7 +130,9 @@ with st.expander('01 · Upload order checklist',expanded=True):
 if not pdf_ready:
     st.info('Upload a readable order checklist PDF to continue.')
     st.stop()
-if visual_codes is not None:
+if input_mode == 'Enter configuration manually':
+    st.info('Enter the variant, electrical connection and selected options from the checklist below.')
+elif visual_codes is not None:
     st.success('Configuration read from the checklist: ' + ', '.join(sorted(visual_codes)))
     st.caption('Automatic recognition is limited to supported BP 100 HE revision 07/08 layouts. Verify the result before using it.')
 else:
@@ -145,27 +153,65 @@ connection_names = {f'FBCA{201+i:04d}':name for i,name in enumerate(connection_l
 option_labels = ['Wall installation for toilet bowl connection','LCD display control panel','High pressure washing technology','AISI 316L chamber','Device main switch','HEPA H14 air filtering','Electrical heated drying and cooling','Chemical dosing pump','Infra-red switch (LED)','Infra-red switch (LCD)','Emergency stop button','ST1 external printer','RS232 port','Independent monitoring system','Manual emptier conversion kit','Flushing kit','USB predisposition']
 option_names = {f'FBCA{1000+i:04d}':name for i,name in enumerate(option_labels)}
 options = [c for c in all_codes if c.startswith('FBCA1')]
-pdf_key = hashlib.sha256(f.getvalue()).hexdigest()
+pdf_key = hashlib.sha256(f.getvalue()).hexdigest() if f else 'manual'
 detected_variants = sorted(detected_codes.intersection(variant_codes))
 detected_connections = sorted(detected_codes.intersection(connections))
 detected_options = sorted(detected_codes.intersection(options))
 if detected_codes:
-    st.caption('Explicit codes detected in PDF fields: ' + ', '.join(sorted(detected_codes)))
+    st.caption('Codes detected from the uploaded checklist: ' + ', '.join(sorted(detected_codes)))
 if len(detected_variants) > 1 or len(detected_connections) > 1:
     st.warning('Multiple variants or electrical connections were found. Choose the correct values manually.')
-if not detected_codes:
+if not detected_codes and input_mode != 'Enter configuration manually':
     st.warning('No explicit commercial codes could be mapped from the interactive PDF fields. Select the configuration manually; printed option lists are not treated as selections.')
-with st.expander('Review or correct detected configuration', expanded=visual_codes is None):
+with st.expander('Enter or change checklist selections', expanded=True):
+    st.caption('Change the selections if the customer changes an order. The PDF itself is not modified; the selections below determine the results shown by this app.')
     col_variant,col_power = st.columns(2)
     with col_variant:
         selected_variant = st.selectbox('Machine variant from checklist',variant_codes,index=variant_codes.index(detected_variants[0]) if len(detected_variants)==1 else None,format_func=lambda c: variant_names.get(c,c)+' ('+c+')',placeholder='Select the variant',key='variant_'+pdf_key)
     with col_power:
         selected_connection = st.selectbox('Electrical connection code',connections,index=connections.index(detected_connections[0]) if len(detected_connections)==1 else None,placeholder='Select the electrical connection',format_func=lambda c: connection_names.get(c,'Unknown connection')+' ('+c+')',key='connection_'+pdf_key)
     selected_options = st.multiselect('Selected option codes',options,default=detected_options,format_func=lambda c: option_names.get(c,'Other option')+' ('+c+')',help='Only select options marked on the uploaded checklist.',key='options_'+pdf_key)
+    st.markdown('**Additional checklist details**')
+    st.caption('Optional details for recording and review. These fields are not read from the PDF automatically and do not currently change the BOM or routing.')
+    detail_left, detail_right = st.columns(2)
+    with detail_left:
+        control_panel = st.selectbox('Control panel', ['LED', 'LCD'], index=None, placeholder='Not specified', key='panel_'+pdf_key)
+        panelling = st.selectbox('Closing panelling', ['No', 'Yes'], index=None, placeholder='Not specified', key='panelling_'+pdf_key)
+        installation = st.selectbox('Installation type', ['Stand Alone', 'Recessed wall'], index=None, placeholder='Not specified', key='installation_'+pdf_key)
+        drain_position = st.selectbox('Drain position', ['To the wall', 'To the floor'], index=None, placeholder='Not specified', key='drain_'+pdf_key)
+        drain_diameter = st.selectbox('Drain diameter', ['90 mm', '110 mm'], index=None, placeholder='Not specified', key='diameter_'+pdf_key)
+        power = st.selectbox('Power', ['3.05 kW', '5.05 kW'], index=None, placeholder='Not specified', key='power_'+pdf_key)
+    with detail_right:
+        customer = st.text_input('Customer', key='customer_'+pdf_key)
+        order_number = st.text_input('Order number', key='order_number_'+pdf_key)
+        order_quantity = st.number_input('Order quantity', min_value=1, value=None, step=1, placeholder='Not specified', key='order_quantity_'+pdf_key)
+        installation_country = st.text_input('Installation country', key='installation_country_'+pdf_key)
+        destination_country = st.text_input('Destination country', key='destination_country_'+pdf_key)
+        packaging = st.text_input('Packaging', key='packaging_'+pdf_key)
+        manual_language = st.text_input('User manual language', key='manual_language_'+pdf_key)
+        panel_language = st.text_input('Control panel language', key='panel_language_'+pdf_key)
+        checklist_notes = st.text_area('Checklist notes', key='notes_'+pdf_key)
 if not selected_variant or not selected_connection:
     st.info('Select the machine variant and electrical connection to see similar historical orders.')
     st.stop()
 selected_codes = [selected_variant, selected_connection, *selected_options]
+st.markdown('**Configuration used for this analysis**')
+st.write(', '.join(selected_codes))
+if selected_variant != 'FBCA0002' and {'FBCA1008', 'FBCA1009'}.intersection(selected_options):
+    st.warning('The BP 100 HE checklist describes infrared door-opening options as available only for the fully automatic variant. Please review this selection; the prototype does not enforce CPQ rules.')
+configuration_export = {'input_source': 'manual' if f is None else 'uploaded_pdf', 'pdf_filename': f.name if f else None,
+    'detected_pdf_codes': sorted(detected_codes) if f else [],
+    'variant': selected_variant, 'electrical_connection': selected_connection, 'options': selected_options,
+    'additional_details_not_used_in_bom': {'control_panel': control_panel, 'closing_panelling': panelling,
+        'installation_type': installation, 'drain_position': drain_position, 'drain_diameter': drain_diameter,
+        'power': power, 'installation_country': installation_country, 'destination_country': destination_country,
+        'packaging': packaging, 'user_manual_language': manual_language, 'control_panel_language': panel_language,
+        'customer': customer, 'order_number': order_number, 'order_quantity': order_quantity, 'notes': checklist_notes}}
+st.download_button('Download checklist selections', json.dumps(configuration_export, ensure_ascii=False, indent=2).encode('utf-8'), file_name='BP100_HE_checklist_selections.json', mime='application/json', help='The optional details are recorded for review; they do not currently affect the BOM or routing.')
+if f and detected_codes:
+    recognized = set(detected_codes) & (set(variant_codes) | set(connections) | set(options))
+    if set(selected_codes) != recognized:
+        st.info('Your current selections differ from the detected PDF values. The analysis uses your current selections, not the original PDF values.')
 st.subheader('BOM candidate from historical orders')
 st.caption('Components and quantities observed in similar orders. Review every line before use.')
 try:
