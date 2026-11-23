@@ -87,6 +87,11 @@ pdf_ready = False
 detected_codes = set()
 visual_codes = None
 st.caption('Proof of concept · Uses historical production records; results are not an approved BOM.')
+with st.expander('Pilot scope and data sources'):
+    st.markdown('**Current pilot:** BP 100 HE. The six families named in the first survey response are BP 100, BP 100 H, BP 100 HE, BP 100 HSER, BP 100 HLA and BP 100 HXL. The full subfamily mapping is still to be confirmed.')
+    st.markdown('**Current data:** local Excel exports of historical engineering BOMs, production BOMs and routings. This app does not currently connect to AS/400 or SAP. AS/400 is the existing ERP; its replacement by SAP is planned for 1 August 2027, with the scope of that date and the future interface still to be confirmed.')
+    st.markdown('**Review before release:** check that the confirmed OCL configuration matches the applicable approved rules, and that the BOM and routing match those rules. Approved rules, quantities per machine and the release process are not yet established in this prototype.')
+    st.caption('Project scope and review requirements include one survey response and require confirmation with the responsible teams.')
 with st.expander('01 · Upload order checklist',expanded=True):
     f=st.file_uploader('Drag and drop a checklist PDF',type='pdf')
     if f:
@@ -173,8 +178,13 @@ try:
     candidate, candidate_references = propose(set(selected_codes), bom_records, bom_descriptions)
     if candidate_references:
         candidate_df = pd.DataFrame(candidate)
+        candidate_df['Unit of measure'] = 'Not available'
+        candidate_df['BOM level'] = 'Not available'
+        candidate_df['Rule ID'] = 'Not available'
+        candidate_df = candidate_df[['Item code', 'Description', 'Suggested quantity', 'Unit of measure', 'BOM level', 'Rule ID', 'Quantity agreement', 'Observed in', 'References', 'Quantity range']]
         st.warning('Exploratory candidate, not an approved or complete production BOM. Quantities are totals across the linked orders of each reference; order and machine quantities may differ. Verify each component and quantity against engineering data.')
         st.caption('A component is included when it appears in at least half of up to five same-variant historical references. The suggested quantity is the most common observed total; quantity agreement and range show disagreements.')
+        st.caption('Unit of measure, BOM level and rule ID are not available for this historical candidate. No approved rule has been applied; do not treat an unavailable value as verified.')
         st.dataframe(candidate_df, hide_index=True, use_container_width=True)
         st.download_button('Download BOM candidate as CSV', candidate_df.to_csv(index=False).encode('utf-8-sig'), file_name='BP100_HE_BOM_candidate.csv', mime='text/csv')
         with st.expander('Show historical references used for this candidate'):
