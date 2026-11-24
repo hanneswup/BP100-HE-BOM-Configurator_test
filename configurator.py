@@ -48,7 +48,7 @@ if logo_file.is_file():
 st.markdown('''<div class="hero"><div class="hero-copy"><div class="eyebrow">BP 100 HE · Configuration workspace</div>
 <h1>From checklist to reference BOM</h1>
 <p>Upload an order checklist, review its configuration and explore comparable production records.</p></div>''' + logo_html + '''</div>
-<div class="workflow"><span><b>01</b> Upload checklist</span><span><b>02</b> Review configuration</span><span><b>03</b> Explore reference BOM</span></div>''', unsafe_allow_html=True)
+<div class="workflow"><span>Order information</span><span>Configuration</span><span>Reference BOM</span></div>''', unsafe_allow_html=True)
 
 @st.cache_data(show_spinner='Loading source files...')
 def load():
@@ -166,7 +166,7 @@ detected_variants = sorted(detected_codes.intersection(variant_codes))
 detected_connections = sorted(detected_codes.intersection(connections))
 detected_options = sorted(detected_codes.intersection(options))
 auto_recognized = visual_codes is not None and len(detected_variants) == 1 and len(detected_connections) == 1 and set(detected_codes).issubset(set(variant_codes) | set(connections) | set(options))
-if not auto_recognized:
+if not f:
     st.subheader('02 · Review configuration')
 if detected_codes:
     st.caption('Codes detected from the uploaded checklist: ' + ', '.join(sorted(detected_codes)))
@@ -174,7 +174,9 @@ if len(detected_variants) > 1 or len(detected_connections) > 1:
     st.warning('Multiple variants or electrical connections were found. Choose the correct values manually.')
 if not detected_codes and input_mode == 'Upload checklist PDF':
     st.warning('No explicit commercial codes could be mapped from the interactive PDF fields. Select the configuration manually; printed option lists are not treated as selections.')
-with st.expander('Change or add checklist selections' if auto_recognized else 'Enter or change checklist selections', expanded=not auto_recognized):
+selection_label = ('Change or add checklist selections' if auto_recognized else
+                   'Complete missing checklist selections' if f else 'Enter or change checklist selections')
+with st.expander(selection_label, expanded=not auto_recognized):
     st.caption('Enter or change selections from the available order information. The PDF itself is not modified; the selections below determine the results shown by this app.')
     col_variant,col_power = st.columns(2)
     with col_variant:
