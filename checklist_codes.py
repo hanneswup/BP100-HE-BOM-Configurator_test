@@ -99,3 +99,44 @@ def extract_visual_codes(pdf_bytes):
     if len(marked.intersection(codes[:3])) != 1 or len(marked.intersection(codes[3:27])) != 1:
         return None
     return marked
+
+
+def extract_rev08_form_values(fields, page_text):
+    """Read only verified radio choices in the BP 100 HE revision 08 form.
+
+    A parent value alone is insufficient: it must match exactly one selected
+    child widget and that widget's on-state and position in the verified group.
+    """
+    if not re.search(r'BP\s*100\s*HE\s*Rev\.\s*08\b', page_text, re.I):
+        return {}
+    mappings = {
+        'Machine type': ('variant', ['FBCA0000', 'FBCA0001', 'FBCA0002']),
+        'Control panel': ('control_panel', ['LED', 'LCD']),
+        'Installation type': ('installation', ['Stand Alone', 'Recessed wall']),
+        'Power': ('power', ['3.05 kW', '5.05 kW']),
+    }
+    result = {}
+    for name, (target, choices) in mappings.items():
+        field = fields.get(name)
+        if not field or str(field.get('/FT')) != '/Btn':
+            continue
+        value = str(field.get('/V') or '')
+        children = [child.get_object() for child in field.get('/Kids', [])]
+        if len(children) != len(choices) or value in ('', '/Off'):
+            continue
+        selected = []
+        for i, child in enumerate(children):
+            appearance = child.get('/AP') or {}
+            states = appearance.get('/N') or {}
+            on_states = [str(state) for state in states if str(state) != '/Off']
+            if len(on_states) != 1:
+                selected = []
+                break
+            if str(child.get('/AS') or '/Off') != '/Off':
+                if str(child.get('/AS')) != value or on_states[0] != value:
+                    selected = []
+                    break
+                selected.append(i)
+        if len(selected) == 1:
+            result[target] = choices[selected[0]]
+    return result

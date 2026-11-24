@@ -7,7 +7,7 @@ import re
 import pandas as pd
 import streamlit as st
 from pypdf import PdfReader
-from checklist_codes import extract_codes, extract_visual_codes
+from checklist_codes import extract_codes, extract_visual_codes, extract_rev08_form_values
 
 DATA = Path(__file__).resolve().parent / 'Data' / 'Excel'
 st.set_page_config(page_title='BP100 HE BOM Configurator', layout='wide')
@@ -96,6 +96,7 @@ with st.expander('Pilot scope and data sources'):
 st.subheader('01 · Choose the order information')
 input_mode = st.radio('Order input', ['Upload checklist PDF', 'Purchase order without checklist', 'Enter configuration manually'], horizontal=True, label_visibility='collapsed')
 f = None
+form_values = {}
 purchase_order = None
 if input_mode == 'Purchase order without checklist':
     purchase_order = st.file_uploader('Purchase order PDF (optional reference)', type='pdf', key='purchase_order_upload', help='The PDF is a reference only; the app does not extract its contents.')
@@ -118,7 +119,10 @@ else:
                 st.error('This checklist is for BP 100 ' + family_match.group(1).upper() + '. The available BOM data and models currently support BP 100 HE only.')
                 st.stop()
             fields=reader.get_fields() or {}
+            form_values = extract_rev08_form_values(fields, header_text)
             detected_codes=extract_codes(fields)
+            if form_values.get('variant'):
+                detected_codes.add(form_values['variant'])
             try:
                 visual_codes = extract_visual_codes(f.getvalue())
             except Exception:
@@ -143,7 +147,7 @@ elif input_mode == 'Purchase order without checklist':
     st.caption('If the purchase order does not specify a required selection, obtain clarification before proceeding. No unspecified option is inferred.')
 elif visual_codes is not None:
     st.success('Supported configuration codes read from the checklist: ' + ', '.join(sorted(visual_codes)))
-    st.caption('Only supported BP 100 HE revision 07/08 code selections are checked. Other checklist details and notes are not automatically captured; verify the detected selections before use.')
+    st.caption('Supported BP 100 HE revision 07/08 code selections were read. Other details and notes may still need to be entered.')
 else:
     st.warning('Automatic checkbox recognition was not reliable for this PDF. Select the configuration below.')
 try: data=load()
@@ -176,7 +180,11 @@ if not detected_codes and input_mode == 'Upload checklist PDF':
     st.warning('No explicit commercial codes could be mapped from the interactive PDF fields. Select the configuration manually; printed option lists are not treated as selections.')
 selection_label = ('Change or add checklist selections' if auto_recognized else
                    'Complete missing checklist selections' if f else 'Enter or change checklist selections')
-with st.expander(selection_label, expanded=not auto_recognized):
+detail_keys = ['panel_', 'installation_', 'drain_', 'diameter_', 'power_']
+missing_saved_details = any(not st.session_state.get(key + pdf_key) for key in detail_keys)
+if st.session_state.get('panel_' + pdf_key) == 'LCD':
+    missing_saved_details = missing_saved_details or not st.session_state.get('panel_language_' + pdf_key, '').strip()
+with st.expander(selection_label, expanded=not auto_recognized or missing_saved_details):
     st.caption('Enter or change selections from the available order information. The PDF itself is not modified; the selections below determine the results shown by this app.')
     col_variant,col_power = st.columns(2)
     with col_variant:
@@ -184,16 +192,16 @@ with st.expander(selection_label, expanded=not auto_recognized):
     with col_power:
         selected_connection = st.selectbox('Electrical connection code',connections,index=connections.index(detected_connections[0]) if len(detected_connections)==1 else None,placeholder='Select the electrical connection',format_func=lambda c: connection_names.get(c,'Unknown connection')+' ('+c+')',key='connection_'+pdf_key)
     selected_options = st.multiselect('Selected option codes',options,default=detected_options,format_func=lambda c: option_names.get(c,'Other option')+' ('+c+')',help='Only select options marked on the uploaded checklist.',key='options_'+pdf_key)
-    st.markdown('**Additional checklist details**')
-    st.caption('Optional details for recording and review. These fields are not read from the PDF automatically and do not currently change the BOM or routing.')
+    st.markdown('**Required BP 100 HE details**')
+    st.caption('Clearly identified form values are prefilled. Other details must be entered. These fields do not yet change the BOM or routing; workshop requirements need engineering confirmation.')
     detail_left, detail_right = st.columns(2)
     with detail_left:
-        control_panel = st.selectbox('Control panel', ['LED', 'LCD'], index=None, placeholder='Not specified', key='panel_'+pdf_key)
+        control_panel = st.selectbox('Control panel *', ['LED', 'LCD'], index=['LED', 'LCD'].index(form_values['control_panel']) if form_values.get('control_panel') in ['LED', 'LCD'] else None, placeholder='Not specified', key='panel_'+pdf_key)
         panelling = st.selectbox('Closing panelling', ['No', 'Yes'], index=None, placeholder='Not specified', key='panelling_'+pdf_key)
-        installation = st.selectbox('Installation type', ['Stand Alone', 'Recessed wall'], index=None, placeholder='Not specified', key='installation_'+pdf_key)
-        drain_position = st.selectbox('Drain position', ['To the wall', 'To the floor'], index=None, placeholder='Not specified', key='drain_'+pdf_key)
-        drain_diameter = st.selectbox('Drain diameter', ['90 mm', '110 mm'], index=None, placeholder='Not specified', key='diameter_'+pdf_key)
-        power = st.selectbox('Power', ['3.05 kW', '5.05 kW'], index=None, placeholder='Not specified', key='power_'+pdf_key)
+        installation = st.selectbox('Installation type *', ['Stand Alone', 'Recessed wall'], index=['Stand Alone', 'Recessed wall'].index(form_values['installation']) if form_values.get('installation') in ['Stand Alone', 'Recessed wall'] else None, placeholder='Not specified', key='installation_'+pdf_key)
+        drain_position = st.selectbox('Drain position *', ['To the wall', 'To the floor'], index=None, placeholder='Not specified', key='drain_'+pdf_key)
+        drain_diameter = st.selectbox('Drain diameter *', ['90 mm', '110 mm'], index=None, placeholder='Not specified', key='diameter_'+pdf_key)
+        power = st.selectbox('Power *', ['3.05 kW', '5.05 kW'], index=['3.05 kW', '5.05 kW'].index(form_values['power']) if form_values.get('power') in ['3.05 kW', '5.05 kW'] else None, placeholder='Not specified', key='power_'+pdf_key)
     with detail_right:
         customer = st.text_input('Customer', key='customer_'+pdf_key)
         order_number = st.text_input('Order number', key='order_number_'+pdf_key)
@@ -202,8 +210,18 @@ with st.expander(selection_label, expanded=not auto_recognized):
         destination_country = st.text_input('Destination country', key='destination_country_'+pdf_key)
         packaging = st.text_input('Packaging', key='packaging_'+pdf_key)
         manual_language = st.text_input('User manual language', key='manual_language_'+pdf_key)
-        panel_language = st.text_input('Control panel language', key='panel_language_'+pdf_key)
+        panel_language = st.text_input('Control panel language (required for LCD)', key='panel_language_'+pdf_key)
         checklist_notes = st.text_area('Checklist notes', key='notes_'+pdf_key)
+required_inputs = {'machine variant': selected_variant, 'electrical connection': selected_connection,
+    'control panel': control_panel, 'installation type': installation, 'drain position': drain_position,
+    'drain diameter': drain_diameter, 'power': power}
+if control_panel == 'LCD':
+    required_inputs['LCD control panel language'] = panel_language.strip()
+missing_inputs = [name for name, value in required_inputs.items() if not value]
+if missing_inputs:
+    st.warning('Required information still missing: ' + ', '.join(missing_inputs) + '. Complete the fields above to continue.')
+    st.stop()
+st.success('The listed workshop fields have been entered. Review the selections; this does not validate the configuration or BOM.')
 if input_mode == 'Purchase order without checklist':
     selection_hash = hashlib.sha256(json.dumps([selected_variant, selected_connection, sorted(selected_options)]).encode('utf-8')).hexdigest()
     po_confirmed = st.checkbox('I have checked the purchase order and confirmed the variant, electrical connection and complete option selection, including any absence of options.', key='po_confirmed_'+pdf_key+'_'+selection_hash)
@@ -256,12 +274,28 @@ configuration_export = {'input_source': 'checklist_pdf' if f else ('purchase_ord
         'packaging': packaging, 'user_manual_language': manual_language, 'control_panel_language': panel_language,
         'customer': customer, 'order_number': order_number, 'order_quantity': order_quantity, 'notes': checklist_notes}}
 st.download_button('Download checklist selections', json.dumps(configuration_export, ensure_ascii=False, indent=2).encode('utf-8'), file_name='BP100_HE_checklist_selections.json', mime='application/json', help='The optional details are recorded for review; they do not currently affect the BOM or routing.')
+from production_sheet_pdf import make_production_sheet
+production_sheet_data = {
+    'customer': customer, 'order_number': order_number, 'order_quantity': order_quantity,
+    'variant': variant_names.get(selected_variant, selected_variant), 'variant_code': selected_variant,
+    'connection': connection_names.get(selected_connection, selected_connection) + ' (' + selected_connection + ')',
+    'power': power, 'panel': control_panel, 'panel_language': panel_language if control_panel == 'LCD' else 'Not applicable',
+    'installation': installation, 'drain_position': drain_position, 'drain_diameter': drain_diameter,
+    'panelling': panelling, 'installation_country': installation_country, 'destination_country': destination_country,
+    'manual_language': manual_language, 'packaging': packaging, 'notes': checklist_notes,
+    'options': [code + ' | ' + option_names.get(code, 'Description not available') for code in selected_options],
+    'source': configuration_export['input_source'], 'filename': f.name if f else (purchase_order.name if purchase_order else None),
+}
+st.subheader('Production sheet PDF')
+st.caption('Draft based on the AS/400 examples. Unavailable ERP fields and traceable components are marked; the document is not an approved production sheet or complete BOM.')
+st.download_button('Download draft production sheet (PDF)', make_production_sheet(production_sheet_data), file_name='BP100_HE_production_sheet_DRAFT.pdf', mime='application/pdf')
+
 if f and detected_codes:
     recognized = set(detected_codes) & (set(variant_codes) | set(connections) | set(options))
     if set(selected_codes) != recognized:
         st.info('Your current selections differ from the detected PDF values. The analysis uses your current selections, not the original PDF values.')
 with st.expander('Review required BP 100 HE details and technical BOM combination', expanded=False):
-    st.caption('Workshop-based draft checks for BP 100 HE only. Automatic PDF recognition currently covers codes, not these additional fields. Confirm applicability with engineering.')
+    st.caption('Workshop-based draft checks for BP 100 HE only. Some form values can be read; remaining details must be entered. Confirm applicability with engineering.')
     required_details = {'control panel': control_panel, 'installation type': installation, 'drain position': drain_position,
         'drain diameter': drain_diameter, 'power': power}
     if control_panel == 'LCD':
