@@ -214,6 +214,33 @@ if not selected_variant or not selected_connection:
 selected_codes = [selected_variant, selected_connection, *selected_options]
 st.markdown('**Configuration used for this analysis**')
 st.write(', '.join(selected_codes))
+comparison_status = 'not_provided'
+if f:
+    with st.expander('Compare checklist with purchase order (optional)', expanded=False):
+        po_compare = st.file_uploader('Purchase order PDF', type='pdf', key='po_compare_'+pdf_key, help='The document is a reference only. Enter its codes manually; it is not read automatically.')
+        if po_compare:
+            st.caption('The PDF is not parsed. Enter the complete commercial-code selection from the purchase order; missing or unclear information must be clarified.')
+            po_variant = st.selectbox('Purchase order: machine variant', variant_codes, index=None, key='compare_variant_'+pdf_key)
+            po_connection = st.selectbox('Purchase order: electrical connection', connections, index=None, key='compare_connection_'+pdf_key)
+            po_options = st.multiselect('Purchase order: selected options', options, key='compare_options_'+pdf_key)
+            po_hash = hashlib.sha256(json.dumps([po_variant, po_connection, sorted(po_options), hashlib.sha256(po_compare.getvalue()).hexdigest()]).encode()).hexdigest()
+            po_complete = st.checkbox('I have checked all listed commercial codes and confirmed the option selection, including any absence of options.', key='compare_confirm_'+po_hash)
+            if not po_complete or not po_variant or not po_connection:
+                comparison_status = 'incomplete'
+                st.warning('Complete and confirm the purchase order selection before comparing it with the checklist.')
+            else:
+                po_codes = {po_variant, po_connection, *po_options}
+                ocl_codes = set(selected_codes)
+                missing_on_po = sorted(ocl_codes - po_codes)
+                missing_on_ocl = sorted(po_codes - ocl_codes)
+                comparison_status = 'mismatch' if missing_on_po or missing_on_ocl else 'match'
+                if comparison_status == 'match':
+                    st.success('The manually confirmed purchase order codes match the current checklist selection. Other fields and non-commercial items were not compared.')
+                else:
+                    st.warning('The commercial-code selections differ. Clarify the differences before using the technical BOM preview.')
+                    st.write('Only in current checklist selection:', ', '.join(missing_on_po) or 'None')
+                    st.write('Only in purchase order:', ', '.join(missing_on_ocl) or 'None')
+                st.caption('This comparison covers only manually entered commercial codes, not quantities, customer details, non-price-relevant items or free text.')
 if selected_variant != 'FBCA0002' and {'FBCA1008', 'FBCA1009'}.intersection(selected_options):
     st.warning('The BP 100 HE checklist describes infrared door-opening options as available only for the fully automatic variant. Please review this selection; the prototype does not enforce CPQ rules.')
 configuration_export = {'input_source': 'checklist_pdf' if f else ('purchase_order' if input_mode == 'Purchase order without checklist' else 'manual'), 'pdf_filename': f.name if f else None,
@@ -231,6 +258,66 @@ if f and detected_codes:
     recognized = set(detected_codes) & (set(variant_codes) | set(connections) | set(options))
     if set(selected_codes) != recognized:
         st.info('Your current selections differ from the detected PDF values. The analysis uses your current selections, not the original PDF values.')
+with st.expander('Review required BP 100 HE details and technical BOM combination', expanded=False):
+    st.caption('Workshop-based draft checks for BP 100 HE only. Automatic PDF recognition currently covers codes, not these additional fields. Confirm applicability with engineering.')
+    required_details = {'control panel': control_panel, 'installation type': installation, 'drain position': drain_position,
+        'drain diameter': drain_diameter, 'power': power}
+    if control_panel == 'LCD':
+        required_details['LCD control panel language'] = panel_language.strip()
+    missing_details = [name for name, value in required_details.items() if not value]
+    if missing_details:
+        st.warning('Additional details to confirm: ' + ', '.join(missing_details) + '. Open the checklist selections above to enter them.')
+    else:
+        st.success('The workshop-listed technical detail fields have been entered. This does not validate the configuration or its BOM.')
+    configuration_conflicts = []
+    if power == '5.05 kW' and selected_connection == 'FBCA0212':
+        configuration_conflicts.append('power / connection')
+        st.warning('The checklist describes FBCA0212 (110 V, 60 Hz) as limited to 3.05 kW. Review the selection.')
+    if power == '3.05 kW' and selected_connection == 'FBCA0218':
+        configuration_conflicts.append('power / UL connection')
+        st.warning('The checklist describes FBCA0218 (208 V, UL) as limited to 5.05 kW. Review the selection.')
+    if selected_variant == 'FBCA0000' and 'FBCA1002' in selected_options:
+        configuration_conflicts.append('manual door / high pressure')
+        st.warning('The checklist describes high-pressure washing as unavailable for the manual door variant. Review the selection.')
+    if checklist_notes.strip():
+        configuration_conflicts.append('unreviewed checklist notes')
+        st.warning('Checklist notes contain text. A person must assess whether it affects the technical configuration or is a special request.')
+    from bom_assembly import technical_roots, build_assembly_preview
+    root_frame = technical_roots(data['technical'])
+    root_labels = dict(zip(root_frame['Item Code'], root_frame['Item Code Description']))
+    root_codes = sorted(root_labels)
+    st.markdown('**Exploratory combination of technical BOMs**')
+    st.warning('Select the technical codes manually against AS/400. No commercial-to-technical mapping, validity dates, unit conversions, multi-level explosion, production flags or per-machine normalization are validated by this calculation.')
+    historical_mapping = data['assoc'][['Production Sheet', 'Commercial Code', 'Technical Code']].copy()
+    historical_mapping['Commercial Code'] = historical_mapping['Commercial Code'].map(text)
+    historical_mapping['Technical Code'] = historical_mapping['Technical Code'].map(text)
+    historical_mapping = historical_mapping[historical_mapping['Commercial Code'].isin(selected_codes) & historical_mapping['Technical Code'].ne('')]
+    if not historical_mapping.empty:
+        mapping_summary = historical_mapping.groupby(['Commercial Code', 'Technical Code'], as_index=False)['Production Sheet'].nunique()
+        mapping_summary.columns = ['Commercial code', 'Observed technical code', 'Historical sheets']
+        mapping_summary['Description in technical BOM export'] = mapping_summary['Observed technical code'].map(root_labels).fillna('Not found as BOM root')
+        st.caption('Historical associations below are leads for source verification, not an approved mapping or proof that a code fits this configuration.')
+        st.dataframe(mapping_summary, hide_index=True, use_container_width=True)
+    machine_root = st.selectbox('Technical machine BOM', root_codes, index=None, placeholder='Select a verified machine code', format_func=lambda c: c + ' | ' + root_labels[c], key='machine_root_'+pdf_key)
+    option_roots = st.multiselect('Technical option BOMs', [c for c in root_codes if c != machine_root], format_func=lambda c: c + ' | ' + root_labels[c], key='option_roots_'+pdf_key)
+    root_fingerprint = hashlib.sha256(json.dumps([machine_root, sorted(option_roots), sorted(selected_codes)]).encode()).hexdigest()
+    roots_verified = st.checkbox('I have checked the machine and all applicable option BOM codes against the source, including options without commercial codes.', key='roots_verified_'+root_fingerprint)
+    if machine_root and roots_verified:
+        if missing_details or configuration_conflicts or comparison_status in ('incomplete', 'mismatch'):
+            st.warning('Complete the BP 100 HE detail review, resolve highlighted conflicts and review notes or purchase order differences before the technical BOM preview.')
+        else:
+            try:
+                summary, contributions = build_assembly_preview(data['technical'], machine_root, option_roots)
+                st.caption('Level-1 positions only; signed source quantities are summed once per selected BOM. Zero and negative totals are shown for review. Quantities are not multiplied by order quantity; no units or production approval are inferred.')
+                st.dataframe(summary, hide_index=True, use_container_width=True)
+                with st.expander('Source positions and signed quantities'):
+                    st.dataframe(contributions, hide_index=True, use_container_width=True)
+                if any(summary['Net quantity'].map(lambda x: float(x) < 0)):
+                    st.error('Negative totals were found. Review missing base parts, quantities, validity and applicability; this output must not be used for production.')
+                st.download_button('Download technical BOM preview', summary.to_csv(index=False).encode('utf-8-sig'), file_name='technical_bom_preview.csv', mime='text/csv')
+                st.download_button('Download source positions', contributions.to_csv(index=False).encode('utf-8-sig'), file_name='technical_bom_sources.csv', mime='text/csv')
+            except ValueError as exc:
+                st.error(f'The selected technical BOMs cannot be combined: {exc}')
 st.subheader('BOM candidate from historical orders')
 st.caption('Components and quantities observed in similar orders. Review every line before use.')
 try:
