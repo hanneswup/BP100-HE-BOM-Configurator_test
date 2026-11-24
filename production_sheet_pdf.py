@@ -1,8 +1,10 @@
 """Production-sheet draft laid out after the supplied AS/400 examples."""
 from io import BytesIO
+from pathlib import Path
+from PIL import Image
 import textwrap
 from pypdf import PdfWriter
-from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
+from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject, NumberObject
 
 
 def make_production_sheet(data):
@@ -24,6 +26,10 @@ def make_production_sheet(data):
         value = str(value or '').replace('\\', '\\\\').replace('(', '\\(').replace(')', '\\)').replace('\n', ' ')
         c.append(f'BT /F{2 if bold else 1} {size} Tf {x:.1f} {y:.1f} Td ({value}) Tj ET')
 
+    def centered(c, x, y, width, value, size=7, bold=False):
+        value = str(value or '')
+        text(c, max(x+3, x + (width - len(value)*size*0.52)/2), y, value, size, bold)
+
     def box(c, x, y, w, h, fill=None):
         if fill:
             c.append(f'{fill} rg {x} {y} {w} {h} re f 0 g')
@@ -37,12 +43,12 @@ def make_production_sheet(data):
 
     def field(c, x, y, w, h, label, value):
         box(c, x, y, w, h)
-        text(c, x+4, y+h-9, label, 6)
-        text(c, x+4, y+5, fit(value, max(8, int(w/4.4))), 8, True)
+        centered(c, x, y+h-9, w, label, 6)
+        centered(c, x, y+5, w, fit(value, max(8, int(w/4.4))), 8, True)
 
     def bar(c, y, title):
         box(c, 20, y, 555, 14, '0.61 1 1')
-        text(c, 25, y+4, title, 9, True)
+        centered(c, 20, y+3, 555, title, 10, True)
 
     def row(c, y, code, description, qty='-', line='-'):
         text(c, 25, y, fit(code, 17), 6.5)
@@ -52,9 +58,23 @@ def make_production_sheet(data):
 
     c=page()
     box(c, 20, 20, 555, 805)
-    text(c, 25, 806, 'SteelcoBelimed', 11, True)
-    text(c, 190, 807, 'SCHEDA TECNICA di PRODUZIONE', 13, True)
-    text(c, 405, 791, 'DRAFT - NOT FOR PRODUCTION', 8, True)
+    logo_path = Path(__file__).with_name('as400_header_logo.png')
+    if logo_path.exists():
+        logo = Image.open(logo_path).convert('RGB')
+        img = DecodedStreamObject()
+        img.set_data(logo.tobytes())
+        img[NameObject('/Type')] = NameObject('/XObject')
+        img[NameObject('/Subtype')] = NameObject('/Image')
+        img[NameObject('/Width')] = NumberObject(logo.width)
+        img[NameObject('/Height')] = NumberObject(logo.height)
+        img[NameObject('/ColorSpace')] = NameObject('/DeviceRGB')
+        img[NameObject('/BitsPerComponent')] = NumberObject(8)
+        pages[0][0]['/Resources'][NameObject('/XObject')] = DictionaryObject({NameObject('/Logo'): writer._add_object(img.flate_encode())})
+        c.append('q 145 0 0 26 24 796 cm /Logo Do Q')
+    else:
+        text(c, 25, 806, 'Steelco', 11, True)
+    text(c, 185, 807, 'SCHEDA TECNICA di PRODUZIONE', 13, True)
+    text(c, 410, 792, 'DRAFT - NOT FOR PRODUCTION', 7, True)
     field(c,20,765,115,25,'N. Scheda',None); field(c,135,765,88,25,'Revisione',None); field(c,223,765,92,25,'Quantita',data.get('order_quantity')); field(c,315,765,260,25,'Linea di produzione',None)
     field(c,20,742,203,23,'Cliente',data.get('customer')); field(c,223,742,92,23,'Ordine cliente',data.get('order_number')); field(c,315,742,260,23,'Progetto',None)
     for x,w,label in [(20,148,'Data inizio produzione'),(168,147,'Data fat.'),(315,130,'Data fine produzione'),(445,130,'Data consegna')]: field(c,x,718,w,24,label,None)
@@ -69,16 +89,20 @@ def make_production_sheet(data):
     bar(c,536,'ANNOTAZIONI / COMMENTI')
     note = fit(data.get('notes'), 110)
     text(c,25,524,note,7)
-    bar(c,508,'OPTIONAL - COMMERCIAL CODES')
-    text(c,25,498,'Codice',7,True); text(c,92,498,'Descrizione',7,True); text(c,510,498,'Q.ta',7,True); text(c,546,498,'L.p.',7,True)
+    bar(c,508,'OPTIONAL')
+    text(c,25,498,'Articolo',7,True); text(c,85,498,'Descrizione',7,True); text(c,250,498,'Q.ta',7,True); text(c,276,498,'L.p.',7,True); text(c,303,498,'Articolo',7,True); text(c,363,498,'Descrizione',7,True); text(c,527,498,'Q.ta',7,True); text(c,554,498,'L.p.',7,True)
     options=data.get('options') or []
     for i, option in enumerate(options[:17]):
         code, _, desc = option.partition(' | ')
-        row(c, 489-i*9, code, desc)
+        x = 25 if i < 9 else 303
+        y = 489 - (i % 9) * 9
+        text(c, x, y, fit(code, 13), 6.5)
+        text(c, x+60, y, fit(desc, 35), 6.5)
+        text(c, x+225, y, '-', 6.5)
     if not options: text(c,25,487,'No commercial options selected',7)
-    accessory_y = 475 - max(0, len(options) - 1) * 9
+    accessory_y = 475 - max(0, (len(options)+1)//2 - 1) * 9
     bar(c,accessory_y,'CESTI / ACCESSORI')
-    text(c,25,accessory_y-11,'Articolo',7,True); text(c,92,accessory_y-11,'Descrizione',7,True); text(c,510,accessory_y-11,'Q.ta',7,True); text(c,546,accessory_y-11,'L.p.',7,True)
+    text(c,25,accessory_y-11,'Articolo',7,True); text(c,85,accessory_y-11,'Descrizione',7,True); text(c,250,accessory_y-11,'Q.ta',7,True); text(c,276,accessory_y-11,'L.p.',7,True); text(c,303,accessory_y-11,'Articolo',7,True); text(c,363,accessory_y-11,'Descrizione',7,True); text(c,527,accessory_y-11,'Q.ta',7,True); text(c,554,accessory_y-11,'L.p.',7,True)
     text(c,25,accessory_y-22,'Not available - technical accessories are not determined',7)
     config_y = accessory_y - 39
     bar(c,config_y,'CONFIGURAZIONE')
