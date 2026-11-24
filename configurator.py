@@ -218,6 +218,22 @@ required_inputs = {'machine variant': selected_variant, 'electrical connection':
 if control_panel == 'LCD':
     required_inputs['LCD control panel language'] = panel_language.strip()
 missing_inputs = [name for name, value in required_inputs.items() if not value]
+from production_sheet_pdf import make_production_sheet
+production_sheet_data = {
+    'customer': customer, 'order_number': order_number, 'order_quantity': order_quantity,
+    'variant': variant_names.get(selected_variant, selected_variant), 'variant_code': selected_variant,
+    'connection': (connection_names.get(selected_connection, selected_connection) + ' (' + selected_connection + ')') if selected_connection else None,
+    'power': power, 'panel': control_panel, 'panel_language': panel_language if control_panel == 'LCD' else 'Not applicable',
+    'installation': installation, 'drain_position': drain_position, 'drain_diameter': drain_diameter,
+    'panelling': panelling, 'installation_country': installation_country, 'destination_country': destination_country,
+    'manual_language': manual_language, 'packaging': packaging, 'notes': checklist_notes,
+    'options': [code + ' | ' + option_names.get(code, 'Description not available') for code in selected_options],
+    'source': 'checklist_pdf' if f else ('purchase_order' if input_mode == 'Purchase order without checklist' else 'manual'), 'filename': f.name if f else (purchase_order.name if purchase_order else None),
+}
+st.subheader('Production sheet PDF')
+st.caption('Draft based on the AS/400 examples. Unavailable ERP fields and traceable components are marked; the document is not an approved production sheet or complete BOM.')
+st.download_button('Download draft production sheet (PDF)', make_production_sheet(production_sheet_data), file_name='BP100_HE_production_sheet_DRAFT.pdf', mime='application/pdf')
+
 if missing_inputs:
     st.warning('Required information still missing: ' + ', '.join(missing_inputs) + '. Complete the fields above to continue.')
     st.stop()
@@ -274,22 +290,6 @@ configuration_export = {'input_source': 'checklist_pdf' if f else ('purchase_ord
         'packaging': packaging, 'user_manual_language': manual_language, 'control_panel_language': panel_language,
         'customer': customer, 'order_number': order_number, 'order_quantity': order_quantity, 'notes': checklist_notes}}
 st.download_button('Download checklist selections', json.dumps(configuration_export, ensure_ascii=False, indent=2).encode('utf-8'), file_name='BP100_HE_checklist_selections.json', mime='application/json', help='The optional details are recorded for review; they do not currently affect the BOM or routing.')
-from production_sheet_pdf import make_production_sheet
-production_sheet_data = {
-    'customer': customer, 'order_number': order_number, 'order_quantity': order_quantity,
-    'variant': variant_names.get(selected_variant, selected_variant), 'variant_code': selected_variant,
-    'connection': connection_names.get(selected_connection, selected_connection) + ' (' + selected_connection + ')',
-    'power': power, 'panel': control_panel, 'panel_language': panel_language if control_panel == 'LCD' else 'Not applicable',
-    'installation': installation, 'drain_position': drain_position, 'drain_diameter': drain_diameter,
-    'panelling': panelling, 'installation_country': installation_country, 'destination_country': destination_country,
-    'manual_language': manual_language, 'packaging': packaging, 'notes': checklist_notes,
-    'options': [code + ' | ' + option_names.get(code, 'Description not available') for code in selected_options],
-    'source': configuration_export['input_source'], 'filename': f.name if f else (purchase_order.name if purchase_order else None),
-}
-st.subheader('Production sheet PDF')
-st.caption('Draft based on the AS/400 examples. Unavailable ERP fields and traceable components are marked; the document is not an approved production sheet or complete BOM.')
-st.download_button('Download draft production sheet (PDF)', make_production_sheet(production_sheet_data), file_name='BP100_HE_production_sheet_DRAFT.pdf', mime='application/pdf')
-
 if f and detected_codes:
     recognized = set(detected_codes) & (set(variant_codes) | set(connections) | set(options))
     if set(selected_codes) != recognized:
