@@ -118,6 +118,8 @@ def make_production_sheet(data):
     c.append('20 756 m 575 756 l S')
     text(c,25,741,'Traceability data not available in this prototype.',8)
     text(c,25,728,'Do not use this draft as an approved production document.',8,True)
+    text(c,25,713,'Packaging may require BOM materials; packaging components are not derived.',8,True)
+    text(c,25,700,'Confirm packaging and applicable materials with the responsible team.',8)
     text(c,520,27,'2 / 2',7,True)
     for sheet,commands in pages:
         stream=DecodedStreamObject(); stream.set_data('\n'.join(commands).encode('cp1252',errors='replace')); sheet[NameObject('/Contents')]=writer._add_object(stream)

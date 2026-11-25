@@ -93,6 +93,10 @@ with st.expander('Pilot scope and data sources'):
     st.markdown('**Current data:** local Excel exports of historical engineering BOMs, production BOMs and routings. This app does not currently connect to AS/400 or SAP. AS/400 is the existing ERP; its replacement by SAP is planned for 1 August 2027, with the scope of that date and the future interface still to be confirmed.')
     st.markdown('**Review before release:** check that the confirmed OCL configuration matches the applicable approved rules, and that the BOM and routing match those rules. Approved rules, quantities per machine and the release process are not yet established in this prototype.')
     st.caption('Project scope and review requirements include one survey response and require confirmation with the responsible teams.')
+with st.expander('Pilot testing: record feedback', expanded=False):
+    st.caption('Test with actual historical customer checklists across machine variants and compare with the confirmed production sheet and BOM. Use approved data only. The app does not send this feedback automatically.')
+    feedback_template = pd.DataFrame(columns=['Test case ID', 'OCL revision', 'Machine variant', 'Expected machine code', 'Suggested machine code', 'OCL field or BOM item', 'Expected value', 'Actual value', 'Issue or feedback', 'Source / reference', 'Reviewer', 'Status'])
+    st.download_button('Download pilot feedback template (CSV)', feedback_template.to_csv(index=False).encode('utf-8-sig'), file_name='BP100_HE_pilot_feedback_template.csv', mime='text/csv')
 st.subheader('01 · Choose the order information')
 input_mode = st.radio('Order input', ['Upload checklist PDF', 'Purchase order without checklist', 'Enter configuration manually'], horizontal=True, label_visibility='collapsed')
 f = None
@@ -208,9 +212,9 @@ with st.expander(selection_label, expanded=not auto_recognized or missing_saved_
         order_quantity = st.number_input('Order quantity', min_value=1, value=None, step=1, placeholder='Not specified', key='order_quantity_'+pdf_key)
         installation_country = st.text_input('Installation country', key='installation_country_'+pdf_key)
         destination_country = st.text_input('Destination country', key='destination_country_'+pdf_key)
-        packaging = st.text_input('Packaging', key='packaging_'+pdf_key)
+        packaging = st.text_input('Packaging', key='packaging_'+pdf_key, help='Packaging may require additional production BOM materials. The prototype does not add these automatically.')
         manual_language = st.text_input('User manual language', key='manual_language_'+pdf_key)
-        panel_language = st.text_input('Control panel language (required for LCD)', key='panel_language_'+pdf_key)
+        panel_language = st.text_input('Control panel language (required for LCD)', key='panel_language_'+pdf_key, help='Production may need this information for software setup; its relation to software language must be confirmed.')
         checklist_notes = st.text_area('Checklist notes', key='notes_'+pdf_key)
 required_inputs = {'machine variant': selected_variant, 'electrical connection': selected_connection,
     'control panel': control_panel, 'installation type': installation, 'drain position': drain_position,
@@ -243,6 +247,7 @@ production_sheet_data = {
     'options': [code + ' | ' + option_names.get(code, 'Description not available') for code in selected_options],
     'source': 'checklist_pdf' if f else ('purchase_order' if input_mode == 'Purchase order without checklist' else 'manual'), 'filename': f.name if f else (purchase_order.name if purchase_order else None),
 }
+st.warning('PACKAGING REVIEW: Packaging can require additional production BOM material (for example a wooden cage). This prototype records the selection but does not automatically determine or add packaging components. Confirm the requirement and item codes with the responsible team.')
 st.subheader('Production sheet PDF')
 st.caption('Draft based on the AS/400 examples. Unavailable ERP fields and traceable components are marked; the document is not an approved production sheet or complete BOM.')
 st.download_button('Download draft production sheet (PDF)', make_production_sheet(production_sheet_data), file_name='BP100_HE_production_sheet_DRAFT.pdf', mime='application/pdf')
