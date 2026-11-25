@@ -357,6 +357,7 @@ with st.expander('Review required BP 100 HE details and technical BOM combinatio
         else:
             try:
                 summary, contributions = build_assembly_preview(data['technical'], machine_root, option_roots)
+                st.error('BOM ALERT ? TECHNICAL PREVIEW ONLY. Source BOM selection, scope and quantities are not validated. Engineering review is required before use.')
                 st.caption('Level-1 positions only; signed source quantities are summed once per selected BOM. Zero and negative totals are shown for review. Quantities are not multiplied by order quantity; no units or production approval are inferred.')
                 st.dataframe(summary, hide_index=True, use_container_width=True)
                 with st.expander('Source positions and signed quantities'):
@@ -367,6 +368,7 @@ with st.expander('Review required BP 100 HE details and technical BOM combinatio
                 st.download_button('Download source positions', contributions.to_csv(index=False).encode('utf-8-sig'), file_name='technical_bom_sources.csv', mime='text/csv')
             except ValueError as exc:
                 st.error(f'The selected technical BOMs cannot be combined: {exc}')
+st.error('BOM ALERT ? NOT APPROVED FOR PRODUCTION. All BOM results are exploratory. Missing, extra or incorrect components and quantities cannot be ruled out; engineering must review them against the approved configuration and source BOMs.')
 st.subheader('BOM candidate from historical orders')
 st.caption('Components and quantities observed in similar orders. Review every line before use.')
 try:
@@ -382,7 +384,12 @@ try:
         candidate_df['Unit of measure'] = 'Not available'
         candidate_df['BOM level'] = 'Not available'
         candidate_df['Rule ID'] = 'Not available'
-        candidate_df = candidate_df[['Item code', 'Description', 'Suggested quantity', 'Unit of measure', 'BOM level', 'Rule ID', 'Quantity agreement', 'Observed in', 'References', 'Quantity range']]
+        candidate_df['Review alert'] = candidate_df.apply(lambda r: 'CHECK: component absent from some references; quantity differs' if r['Observed in'] < r['References'] and r['Quantity agreement'] < r['Observed in'] else ('CHECK: component absent from some references' if r['Observed in'] < r['References'] else ('CHECK: historical quantities differ' if r['Quantity agreement'] < r['Observed in'] else 'UNVERIFIED: engineering review required')), axis=1)
+        component_risks = (candidate_df['Observed in'] < candidate_df['References']).sum()
+        quantity_risks = (candidate_df['Quantity agreement'] < candidate_df['Observed in']).sum()
+        if component_risks or quantity_risks:
+            st.error(f'BOM ALERT ? {component_risks} component(s) are absent from at least one reference; {quantity_risks} have differing historical quantities. These are risk indicators, not proof of an error.')
+        candidate_df = candidate_df[['Item code', 'Description', 'Suggested quantity', 'Unit of measure', 'BOM level', 'Rule ID', 'Quantity agreement', 'Observed in', 'References', 'Quantity range', 'Review alert']]
         st.warning('Exploratory candidate, not an approved or complete production BOM. Quantities are totals across the linked orders of each reference; order and machine quantities may differ. Verify each component and quantity against engineering data.')
         st.caption('A component is included when it appears in at least half of up to five same-variant historical references. The suggested quantity is the most common observed total; quantity agreement and range show disagreements.')
         st.caption('Unit of measure, BOM level and rule ID are not available for this historical candidate. No approved rule has been applied; do not treat an unavailable value as verified.')
@@ -438,7 +445,11 @@ st.caption('Ranked by shared commercial codes. Similarity is not a technical val
 st.dataframe(reference_frame, hide_index=True, use_container_width=True, column_config={'Code similarity':st.column_config.ProgressColumn('Code similarity',min_value=0,max_value=1,format='%.2f')})
 reference_options = [item[1] for item in reference_candidates]
 sheet = st.selectbox('Inspect a suggested historical reference',reference_options,format_func=lambda r: r+' | '+text(headers.loc[headers['Production Sheet'].map(text)==r,'Machine Code Description'].iloc[0]) if (headers['Production Sheet'].map(text)==r).any() else r)
-st.warning('The BOM below is the recorded BOM of the selected reference, not a generated BOM from the uploaded checklist.')
+selected_reference = next(item for item in reference_candidates if item[1] == sheet)
+missing_reference, extra_reference = selected_reference[2], selected_reference[3]
+st.error('BOM ALERT ? HISTORICAL REFERENCE ONLY. This BOM belongs to another order and may have missing, extra or incorrect components and quantities for the current order. It is not an approved generated BOM.')
+if missing_reference or extra_reference:
+    st.error('CONFIGURATION DIFFERENCE ? Missing requested codes: ' + (', '.join(missing_reference) or 'none') + '; additional historical codes: ' + (', '.join(extra_reference) or 'none') + '. Review the differences before using this reference.')
 h=rows(headers,'Production Sheet',{sheet}).iloc[0]
 links=rows(data['links'],'Production Sheet',{sheet}); association=rows(data['assoc'],'Production Sheet',{sheet})
 ids={text(x) for x in links['Production Order']}; codes={text(x) for x in links['Machine/Optional Item Code']}
@@ -452,6 +463,10 @@ technical=pd.concat(blocks,ignore_index=True) if blocks else tech.iloc[0:0]
 issues=[{'Category':'Missing production BOM','Reference':x,'Next step':'Check order status and ERP export'} for x in missing_orders]+[{'Category':'Missing routing','Reference':x,'Next step':'Check ERP routing assignment'} for x in missing_routing]
 if not roots: issues.append({'Category':'Missing engineering BOM','Reference':machine,'Next step':'Check technical BOM export'})
 diagnostics=pd.DataFrame(issues,columns=['Category','Reference','Next step'])
+if missing_orders or not ids or bom.empty:
+    st.error('BOM ALERT ? Production BOM data is missing or incomplete for the selected historical reference. The displayed lines may not be complete.')
+if not roots:
+    st.error('BOM ALERT ? No engineering BOM root was found for the historical machine code.')
 a,b,c,d=st.columns(4); a.metric('Machine',machine); b.metric('Production orders',len(ids)); c.metric('BOM lines',len(bom)); d.metric('Routing lines',len(routing))
 st.caption(f"Revision {text(h['Revision'])} · {text(h['Machine Code Description'])}. Quantities remain per production order.")
 st.subheader('Reference details')
@@ -480,6 +495,7 @@ with tabs[5]:
 
 output=BytesIO()
 with pd.ExcelWriter(output,engine='openpyxl') as writer:
+    pd.DataFrame([{'Status': 'NOT APPROVED - HISTORICAL REFERENCE ONLY', 'Warning': 'May contain missing, extra or incorrect components and quantities for the current order. Engineering review required.', 'Requested codes absent': ', '.join(missing_reference), 'Additional historical codes': ', '.join(extra_reference), 'Missing production BOM orders': ', '.join(missing_orders)}]).to_excel(writer, sheet_name='READ FIRST - BOM ALERT', index=False)
     for name,df in {'BOM':bom,'Routing':routing,'Orders':links,'Commercial codes':association,'Configuration':config,'Notes':notes,'Engineering BOM':technical,'Diagnostics':diagnostics}.items(): df.to_excel(writer,sheet_name=name,index=False)
 st.download_button('Download reference workbook',output.getvalue(),file_name='BP100_HE_'+sheet.replace('/','-')+'.xlsx',mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
