@@ -218,10 +218,23 @@ required_inputs = {'machine variant': selected_variant, 'electrical connection':
 if control_panel == 'LCD':
     required_inputs['LCD control panel language'] = panel_language.strip()
 missing_inputs = [name for name, value in required_inputs.items() if not value]
+from technical_code_candidates import machine_candidates
+candidates = machine_candidates(data['headers'], data['assoc'], selected_variant, selected_connection, power)
+unique_machine_candidate = candidates[0]['code'] if len(candidates) == 1 else None
+st.markdown('**Historical technical machine-code candidates**')
+if candidates:
+    st.dataframe(pd.DataFrame([{'Technical code': item['code'], 'Description': item['description'], 'Historical production sheets': ', '.join(item['sheets'])} for item in candidates]), hide_index=True, use_container_width=True)
+    st.caption('Matches use the same historical sheet and machine code for variant, electrical connection and power. Other details, revisions and applicability are not validated. These are historical candidates, not approved mappings.')
+    if unique_machine_candidate:
+        st.info('One historical candidate was found and is included as an unverified candidate in the draft PDF: ' + unique_machine_candidate)
+    else:
+        st.warning('Several technical codes match. No code is automatically selected; clarify the correct code with engineering.')
+else:
+    st.info('No unique candidate can be determined from the available historical data. Select variant, connection and power, or clarify the technical code with engineering.')
 from production_sheet_pdf import make_production_sheet
 production_sheet_data = {
     'customer': customer, 'order_number': order_number, 'order_quantity': order_quantity,
-    'variant': variant_names.get(selected_variant, selected_variant), 'variant_code': selected_variant,
+    'variant': variant_names.get(selected_variant, selected_variant), 'variant_code': selected_variant, 'technical_machine': unique_machine_candidate,
     'connection': (connection_names.get(selected_connection, selected_connection) + ' (' + selected_connection + ')') if selected_connection else None,
     'power': power, 'panel': control_panel, 'panel_language': panel_language if control_panel == 'LCD' else 'Not applicable',
     'installation': installation, 'drain_position': drain_position, 'drain_diameter': drain_diameter,

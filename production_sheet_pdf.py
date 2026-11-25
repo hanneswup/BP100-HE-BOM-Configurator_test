@@ -78,7 +78,7 @@ def make_production_sheet(data):
     field(c,20,765,115,25,'N. Scheda',None); field(c,135,765,88,25,'Revisione',None); field(c,223,765,92,25,'Quantita',data.get('order_quantity')); field(c,315,765,260,25,'Linea di produzione',None)
     field(c,20,742,203,23,'Cliente',data.get('customer')); field(c,223,742,92,23,'Ordine cliente',data.get('order_number')); field(c,315,742,260,23,'Progetto',None)
     for x,w,label in [(20,148,'Data inizio produzione'),(168,147,'Data fat.'),(315,130,'Data fine produzione'),(445,130,'Data consegna')]: field(c,x,718,w,24,label,None)
-    field(c,20,694,186,24,'Tipo macchina',data.get('variant')); field(c,206,694,109,24,'Codice articolo',data.get('technical_machine')); field(c,315,678,260,40,'Descrizione articolo',None)
+    field(c,20,694,186,24,'Tipo macchina',data.get('variant')); field(c,206,694,109,24,'Historical code - unverified',data.get('technical_machine')); field(c,315,678,260,40,'Descrizione articolo',None)
     field(c,20,664,98,30,'Modello ICOS',None); field(c,118,664,98,30,'Modello configurato',None); field(c,216,664,99,30,'Requisiti',None)
     field(c,20,640,186,24,'Matricola',None); field(c,206,640,109,24,'Matricola cliente',None); field(c,315,640,260,38,'Codice a barre matricola',None)
     field(c,20,610,98,30,'Configurazione porte',None); field(c,118,610,98,30,'Disinfezione',None); field(c,216,610,99,30,'Alimentazione',None)
