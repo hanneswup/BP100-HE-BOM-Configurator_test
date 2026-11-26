@@ -258,6 +258,17 @@ missing_inputs = [name for name, value in required_inputs.items() if not value]
 from technical_code_candidates import machine_candidates
 candidates = machine_candidates(data['headers'], data['assoc'], selected_variant, selected_connection, power)
 unique_machine_candidate = candidates[0]['code'] if len(candidates) == 1 else None
+dashboard_slot = st.container()
+with dashboard_slot:
+    st.subheader('Order and pilot overview')
+    d1, d2, d3, d4 = st.columns(4)
+    d1.metric('Required fields entered', f'{len(required_inputs) - len(missing_inputs)}/{len(required_inputs)}', help='Only the current prototype checks are counted; this is not proof that the complete OCL was read.')
+    d2.metric('Historical machine-code candidates', len(candidates), help='Candidates are unverified; even one match is not an approved technical code.')
+    d3.metric('Checklist notes', 'Entered' if checklist_notes.strip() else 'Not entered', help='Not entered does not prove that the original OCL has no notes.')
+    d4.metric('Release status', 'Not approved', help='Engineering review remains required for every proposal.')
+    if missing_inputs:
+        st.warning('Missing required fields: ' + ', '.join(missing_inputs) + '.')
+    st.caption('Per-order BOM accuracy: not measured. Options, packaging, notes and the technical code still require review; a complete field count does not establish correctness.')
 st.markdown('**Historical technical machine-code candidates**')
 if candidates:
     st.dataframe(pd.DataFrame([{'Technical code': item['code'], 'Description': item['description'], 'Historical production sheets': ', '.join(item['sheets'])} for item in candidates]), hide_index=True, use_container_width=True)
@@ -502,22 +513,23 @@ try:
         st.download_button('Download detailed production sheet (PDF)', detailed_pdf, file_name='BP100_HE_production_sheet_DRAFT.pdf', mime='application/pdf', help='No usable BOM candidate was found; the PDF states that BOM positions are unavailable.')
     def show_percent(value):
         return f'{value:.0%}' if value is not None else '—'
-    st.markdown('**Historical test of this candidate method**')
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric('Suggested parts present', show_percent(evaluation['precision']), help='Share of suggested component types present in the held-out production BOMs.')
-    m2.metric('Actual parts found', show_percent(evaluation['recall']), help='Share of component types in the held-out BOMs that were suggested.')
-    m3.metric('Quantities correct', show_percent(evaluation['quantity_accuracy']), help='Among correctly suggested components, share with an exactly matching summed quantity.')
-    m4.metric('Complete BOM and quantities', show_percent(evaluation['exact_quantity']), help='Share of covered test sheets where every component and its summed quantity matched exactly.')
-    st.caption(f"Test: {evaluation['covered']} of {evaluation['test']} held-out sheets had comparable training references ({evaluation['train']} training sheets). Sheets with missing linked BOMs, missing quantities or negative quantities are excluded. Shared production orders and identical code sets are kept in the same split; other relationships may remain. Results are historical aggregates, not a probability for this checklist.")
-    st.markdown('**Proposed pilot target: 90% for both component precision and recall**')
-    st.caption('Precision measures how many suggested parts were present; recall measures how many recorded parts were suggested. Quantities and whole-BOM matches are reported separately above. This historical test is not technical acceptance: approved independent OCL/BOM cases, quantity definitions and thresholds still require agreement.')
-    p, r = evaluation['precision'], evaluation['recall']
-    if p is None or r is None:
-        st.warning('The proposed 90% pilot target cannot be assessed because the required historical metrics are unavailable.')
-    elif p >= 0.9 and r >= 0.9:
-        st.info('Both proposed thresholds were reached in this historical test only. This does not approve any BOM or replace independent technical validation.')
-    else:
-        st.error('The proposed pilot target is not reached in this historical test: component precision ' + show_percent(p) + ', component recall ' + show_percent(r) + '. Do not use these results as a production BOM.')
+    with dashboard_slot:
+        st.markdown('**Historical test of the current BOM candidate method**')
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric('Component precision', show_percent(evaluation['precision']), help='Share of suggested component types present in the held-out historical BOMs.')
+        m2.metric('Component completeness', show_percent(evaluation['recall']), help='Share of component types in the held-out historical BOMs that were suggested.')
+        m3.metric('Quantity agreement', show_percent(evaluation['quantity_accuracy']), help='Only among correctly suggested components: share with an exactly matching historical summed quantity.')
+        m4.metric('Complete BOM with quantities', show_percent(evaluation['exact_quantity']), help='Share of covered historical test sheets where all components and summed quantities matched exactly.')
+        st.caption(f"Historical coverage: {evaluation['covered']} of {evaluation['test']} held-out sheets had comparable training references ({evaluation['train']} training sheets). Sheets with missing linked BOMs, missing quantities or negative quantities are excluded. Shared production orders and identical code sets are grouped; other relationships may remain. These are aggregate historical results, not accuracy or probability for the current order.")
+        st.markdown('**Proposed pilot target: 90% for both component precision and completeness**')
+        st.caption('Quantities and complete BOMs are measured separately. The target and acceptance criteria still require agreement and independent, approved OCL/BOM test cases.')
+        p, r = evaluation['precision'], evaluation['recall']
+        if p is None or r is None:
+            st.warning('The proposed 90% pilot target cannot be assessed because the required historical metrics are unavailable.')
+        elif p >= 0.9 and r >= 0.9:
+            st.info('Both proposed thresholds were reached in this historical test only. This does not approve any BOM or replace independent technical validation.')
+        else:
+            st.error('The proposed pilot target is not reached in this historical test: component precision ' + show_percent(p) + ', component completeness ' + show_percent(r) + '. Do not use these results as a production BOM.')
 except Exception as exc:
     st.warning(f'BOM candidate or its historical test could not be prepared: {exc}')
 st.subheader('Historical model performance')
