@@ -10,6 +10,7 @@ import streamlit as st
 from pypdf import PdfReader
 from checklist_codes import extract_codes, extract_visual_codes, extract_rev08_form_values, extract_rev08_connection
 from bom_xml import engineering_tree_xml, historical_candidate_xml, technical_preview_xml, historical_reference_xml
+from dashboard_tree import render_dashboard_tree
 
 DATA = Path(__file__).resolve().parent / 'Data' / 'Excel'
 st.set_page_config(page_title='BP100 HE BOM Configurator', layout='wide')
@@ -102,6 +103,13 @@ pdf_ready = False
 detected_codes = set()
 visual_codes = None
 st.caption('Proof of concept · Uses historical production records; results are not an approved BOM.')
+dashboard_slot = st.container()
+with dashboard_slot:
+    st.markdown('''<div class="dashboard-title"><div class="dash-eyebrow">BP 100 HE &nbsp; | &nbsp; Pilot dashboard</div><div class="dash-name">Order and BOM tree overview</div><div class="dash-subtitle">Expand the branches to inspect the order, source BOM and historical results</div></div>''', unsafe_allow_html=True)
+    dashboard_welcome = st.empty()
+    dashboard_welcome.info('Start below by uploading an OCL or choosing manual entry. The tree and order status update after the source data has loaded.')
+    dashboard_initial_tree = st.empty()
+    dashboard_initial_tree.markdown(render_dashboard_tree({}, []), unsafe_allow_html=True)
 with st.expander('Pilot scope and data sources'):
     st.markdown('**Current pilot:** BP 100 HE. The six families named in the first survey response are BP 100, BP 100 H, BP 100 HE, BP 100 HSER, BP 100 HLA and BP 100 HXL. The full subfamily mapping is still to be confirmed.')
     st.markdown('**Current data:** local Excel exports of historical engineering BOMs, production BOMs and routings. This app does not currently connect to AS/400 or SAP. AS/400 is the existing ERP; its replacement by SAP is planned for 1 August 2027, with the scope of that date and the future interface still to be confirmed.')
@@ -270,9 +278,9 @@ missing_inputs = [name for name, value in required_inputs.items() if not value]
 from technical_code_candidates import machine_candidates
 candidates = machine_candidates(data['headers'], data['assoc'], selected_variant, selected_connection, power)
 unique_machine_candidate = candidates[0]['code'] if len(candidates) == 1 else None
-dashboard_slot = st.container()
+dashboard_welcome.empty()
+dashboard_initial_tree.empty()
 with dashboard_slot:
-    st.markdown('''<div class="dashboard-title"><div class="dash-eyebrow">BP 100 HE &nbsp; | &nbsp; Pilot dashboard</div><div class="dash-name">Order and BOM tree overview</div><div class="dash-subtitle">Expand the branches to inspect the order, source BOM and historical results</div></div>''', unsafe_allow_html=True)
     st.markdown('**Current order · review status**')
     d1, d2, d3, d4 = st.columns(4)
     d1.metric('Required fields entered', f'{len(required_inputs) - len(missing_inputs)}/{len(required_inputs)}', help='Only the current prototype checks are counted; this is not proof that the complete OCL was read.')
@@ -297,7 +305,6 @@ with dashboard_slot:
         'panel': control_panel, 'installation': installation, 'drain_position': drain_position,
         'drain_diameter': drain_diameter, 'packaging': packaging, 'notes': checklist_notes,
         'options': [code + ' | ' + option_names.get(code, 'Other option') for code in selected_options]}
-    from dashboard_tree import render_dashboard_tree
     dashboard_tree_placeholder = st.empty()
     dashboard_tree_placeholder.markdown(render_dashboard_tree(dashboard_tree_config, candidates, source_xml=source_tree_xml, source_error=source_tree_error), unsafe_allow_html=True)
 st.markdown('**Historical technical machine-code candidates**')
