@@ -36,6 +36,14 @@ h1, h2, h3 { color: #102f40 !important; letter-spacing: -.025em; }
 .dashboard-title .dash-eyebrow { color: #2f886b; font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
 .dashboard-title .dash-name { color: #173c52; font-size: 23px; font-weight: 700; line-height: 1.25; margin-top: 4px; }
 .dashboard-title .dash-subtitle { color: #647b88; font-size: 13px; margin-top: 4px; }
+.bom-tree { background: white; border: 1px solid #dce7e8; border-radius: 8px; padding: 14px 18px; margin: 8px 0 16px; font-size: 14px; }
+.bom-tree ul { list-style: none; margin: 0; padding-left: 18px; border-left: 1px solid #d8e4e7; }
+.bom-tree > ul { padding-left: 0; border-left: 0; }
+.bom-tree li { padding: 3px 0 3px 9px; color: #315264; overflow-wrap: anywhere; }
+.bom-tree summary { color: #254992; cursor: pointer; font-weight: 650; padding: 4px 0; }
+.bom-tree summary:hover { color: #2f886b; }
+.bom-tree .tree-label { font-weight: 600; }
+.bom-tree .tree-value { color: #526d78; }
 .stTabs [data-baseweb="tab-list"] { gap: 4px; border-bottom: 1px solid #d5e1e3; }
 .stTabs [data-baseweb="tab"] { color: #536d78; padding: 10px 16px; }
 .stTabs [aria-selected="true"] { color: #007c79 !important; border-bottom-color: #00958e !important; }
@@ -264,7 +272,7 @@ candidates = machine_candidates(data['headers'], data['assoc'], selected_variant
 unique_machine_candidate = candidates[0]['code'] if len(candidates) == 1 else None
 dashboard_slot = st.container()
 with dashboard_slot:
-    st.markdown('''<div class="dashboard-title"><div class="dash-eyebrow">BP 100 HE &nbsp; | &nbsp; Pilot dashboard</div><div class="dash-name">Order and BOM quality overview</div><div class="dash-subtitle">Current order status and historical test results</div></div>''', unsafe_allow_html=True)
+    st.markdown('''<div class="dashboard-title"><div class="dash-eyebrow">BP 100 HE &nbsp; | &nbsp; Pilot dashboard</div><div class="dash-name">Order and BOM tree overview</div><div class="dash-subtitle">Expand the branches to inspect the order, source BOM and historical results</div></div>''', unsafe_allow_html=True)
     st.markdown('**Current order · review status**')
     d1, d2, d3, d4 = st.columns(4)
     d1.metric('Required fields entered', f'{len(required_inputs) - len(missing_inputs)}/{len(required_inputs)}', help='Only the current prototype checks are counted; this is not proof that the complete OCL was read.')
@@ -274,6 +282,24 @@ with dashboard_slot:
     if missing_inputs:
         st.warning('Missing required fields: ' + ', '.join(missing_inputs) + '.')
     st.caption('Per-order BOM accuracy: not measured. Options, packaging, notes and the technical code still require review; a complete field count does not establish correctness.')
+    st.markdown('**Explore the order and BOM tree**')
+    source_tree_code = None
+    if candidates:
+        source_tree_code = st.selectbox('Inspect a historical technical source BOM (optional)', [item['code'] for item in candidates], index=None, placeholder='Choose an unverified technical candidate', key='dashboard_source_tree_'+pdf_key, help='The tree shows source BOM levels only; it does not establish applicability, valid quantities or option BOM selection.')
+    source_tree_xml, source_tree_error = None, None
+    if source_tree_code:
+        try:
+            source_tree_xml = engineering_tree_xml(data['technical'], [source_tree_code])
+        except ValueError as exc:
+            source_tree_error = str(exc)
+    dashboard_tree_config = {'variant': variant_names.get(selected_variant, selected_variant),
+        'connection': connection_names.get(selected_connection, selected_connection), 'power': power,
+        'panel': control_panel, 'installation': installation, 'drain_position': drain_position,
+        'drain_diameter': drain_diameter, 'packaging': packaging, 'notes': checklist_notes,
+        'options': [code + ' | ' + option_names.get(code, 'Other option') for code in selected_options]}
+    from dashboard_tree import render_dashboard_tree
+    dashboard_tree_placeholder = st.empty()
+    dashboard_tree_placeholder.markdown(render_dashboard_tree(dashboard_tree_config, candidates, source_xml=source_tree_xml, source_error=source_tree_error), unsafe_allow_html=True)
 st.markdown('**Historical technical machine-code candidates**')
 if candidates:
     st.dataframe(pd.DataFrame([{'Technical code': item['code'], 'Description': item['description'], 'Historical production sheets': ', '.join(item['sheets'])} for item in candidates]), hide_index=True, use_container_width=True)
@@ -463,6 +489,7 @@ try:
         return records, descriptions, backtest(records, descriptions)
     bom_records, bom_descriptions, evaluation = prepare_bom_candidate_data(data['assoc'], data['links'], data['bom'])
     candidate, candidate_references = propose(set(selected_codes), bom_records, bom_descriptions)
+    dashboard_candidate_rows = []
     if candidate_references and candidate:
         candidate_df = pd.DataFrame(candidate)
         candidate_df['Unit of measure'] = 'Not available'
@@ -481,6 +508,7 @@ try:
         if component_risks or quantity_risks:
             st.error(f'BOM ALERT ? {component_risks} component(s) are absent from at least one reference; {quantity_risks} have differing historical quantities. These are risk indicators, not proof of an error.')
         candidate_df = candidate_df[['Item code', 'Description', 'Suggested quantity', 'Unit of measure', 'BOM level', 'Rule ID', 'Quantity agreement', 'Observed in', 'References', 'Quantity range', 'Machine BOM source evidence', 'Review alert']]
+        dashboard_candidate_rows = candidate_df.to_dict('records')
         st.warning('Exploratory candidate, not an approved or complete production BOM. Quantities are totals across the linked orders of each reference; order and machine quantities may differ. Verify each component and quantity against engineering data.')
         st.caption('A component is included when it appears in at least half of up to five same-variant historical references. The suggested quantity is the most common observed total; quantity agreement and range show disagreements.')
         st.caption('Unit of measure, BOM level and rule ID are not available for this historical candidate. No approved rule has been applied; do not treat an unavailable value as verified.')
@@ -549,6 +577,7 @@ try:
             st.info('Both proposed thresholds were reached in this historical test only. This does not approve any BOM or replace independent technical validation.')
         else:
             st.error('The proposed pilot target is not reached in this historical test: component precision ' + show_percent(p) + ', component completeness ' + show_percent(r) + '. Do not use these results as a production BOM.')
+    dashboard_tree_placeholder.markdown(render_dashboard_tree(dashboard_tree_config, candidates, candidate_rows=dashboard_candidate_rows, references=candidate_references, evaluation=evaluation, source_xml=source_tree_xml, source_error=source_tree_error), unsafe_allow_html=True)
 except Exception as exc:
     st.warning(f'BOM candidate or its historical test could not be prepared: {exc}')
 st.subheader('Historical model performance')
