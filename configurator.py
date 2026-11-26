@@ -9,6 +9,7 @@ import pandas as pd
 import streamlit as st
 from pypdf import PdfReader
 from checklist_codes import extract_codes, extract_visual_codes, extract_rev08_form_values
+from bom_xml import engineering_tree_xml, historical_candidate_xml, technical_preview_xml, historical_reference_xml
 
 DATA = Path(__file__).resolve().parent / 'Data' / 'Excel'
 st.set_page_config(page_title='BP100 HE BOM Configurator', layout='wide')
@@ -390,6 +391,12 @@ with st.expander('Review required BP 100 HE details and technical BOM combinatio
                     st.error('Negative totals were found. Review missing base parts, quantities, validity and applicability; this output must not be used for production.')
                 st.download_button('Download technical BOM preview', summary.to_csv(index=False).encode('utf-8-sig'), file_name='technical_bom_preview.csv', mime='text/csv')
                 st.download_button('Download source positions', contributions.to_csv(index=False).encode('utf-8-sig'), file_name='technical_bom_sources.csv', mime='text/csv')
+                st.download_button('Download technical BOM preview (XML)', technical_preview_xml(configuration_export, summary, contributions), file_name='BP100_HE_technical_BOM_DRAFT.xml', mime='application/xml', help='Source BOMs and their direct level-1 components plus unverified net quantities. Not a validated SAP import.')
+                try:
+                    tree_xml = engineering_tree_xml(data['technical'], [machine_root, *option_roots])
+                    st.download_button('Download engineering BOM source tree (XML)', tree_xml, file_name='BP100_HE_engineering_BOM_tree_DRAFT.xml', mime='application/xml', help='Source BOMs including nested levels. Source quantities, parent links and validity are not validated or consolidated.')
+                except ValueError as exc:
+                    st.warning('Engineering BOM source tree could not be exported: ' + str(exc))
             except ValueError as exc:
                 st.error(f'The selected technical BOMs cannot be combined: {exc}')
 st.error('BOM ALERT ? NOT APPROVED FOR PRODUCTION. All BOM results are exploratory. Missing, extra or incorrect components and quantities cannot be ruled out; engineering must review them against the approved configuration and source BOMs.')
@@ -419,6 +426,7 @@ try:
         st.caption('Unit of measure, BOM level and rule ID are not available for this historical candidate. No approved rule has been applied; do not treat an unavailable value as verified.')
         st.dataframe(candidate_df, hide_index=True, use_container_width=True)
         st.download_button('Download BOM candidate as CSV', candidate_df.to_csv(index=False).encode('utf-8-sig'), file_name='BP100_HE_BOM_candidate.csv', mime='text/csv')
+        st.download_button('Download BOM candidate (XML)', historical_candidate_xml(configuration_export, candidate_df, candidate_references), file_name='BP100_HE_BOM_candidate_DRAFT.xml', mime='application/xml', help='Historical candidate and reference orders; component hierarchy and quantities are unverified.')
         with st.expander('Show historical references used for this candidate'):
             st.dataframe(pd.DataFrame([{'Production sheet': row['sheet'], 'Code similarity': round(score*100, 1), 'Missing requested codes': ', '.join(sorted(set(selected_codes)-row['codes'])), 'Additional codes': ', '.join(sorted(row['codes']-set(selected_codes))), 'Production orders': ', '.join(sorted(row['orders']))} for score, row in candidate_references]), hide_index=True, use_container_width=True)
     else:
@@ -508,6 +516,12 @@ with tabs[2]:
 with tabs[3]:
     if technical.empty: st.warning('No engineering BOM root found for this machine.')
     st.dataframe(technical,hide_index=True,use_container_width=True); st.caption('Includes source validity dates and the production BOM flag; dates are not filtered.')
+    if roots:
+        try:
+            reference_tree_xml = engineering_tree_xml(tech, [machine])
+            st.download_button('Download historical engineering BOM tree (XML)', reference_tree_xml, file_name='BP100_HE_historical_engineering_tree_DRAFT.xml', mime='application/xml')
+        except ValueError as exc:
+            st.warning('Engineering BOM source tree could not be exported: ' + str(exc))
 with tabs[4]:
     st.markdown('**Current sheet**'); st.dataframe(diagnostics,hide_index=True,use_container_width=True)
     negative=tech[pd.to_numeric(tech['Quantity'],errors='coerce')<0]
@@ -522,6 +536,7 @@ with pd.ExcelWriter(output,engine='openpyxl') as writer:
     pd.DataFrame([{'Status': 'NOT APPROVED - HISTORICAL REFERENCE ONLY', 'Warning': 'May contain missing, extra or incorrect components and quantities for the current order. Engineering review required.', 'Requested codes absent': ', '.join(missing_reference), 'Additional historical codes': ', '.join(extra_reference), 'Missing production BOM orders': ', '.join(missing_orders)}]).to_excel(writer, sheet_name='READ FIRST - BOM ALERT', index=False)
     for name,df in {'BOM':bom,'Routing':routing,'Orders':links,'Commercial codes':association,'Configuration':config,'Notes':notes,'Engineering BOM':technical,'Diagnostics':diagnostics}.items(): df.to_excel(writer,sheet_name=name,index=False)
 st.download_button('Download reference workbook',output.getvalue(),file_name='BP100_HE_'+sheet.replace('/','-')+'.xlsx',mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+st.download_button('Download historical reference BOM (XML)', historical_reference_xml(sheet, bom, missing_orders), file_name='BP100_HE_reference_BOM_DRAFT.xml', mime='application/xml', help='Recorded components grouped by historical production order; not the current order BOM.')
 
 st.divider()
 st.subheader('Explore similar configurations')
