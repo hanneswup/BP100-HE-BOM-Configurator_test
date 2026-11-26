@@ -440,6 +440,15 @@ try:
     m3.metric('Quantities correct', show_percent(evaluation['quantity_accuracy']), help='Among correctly suggested components, share with an exactly matching summed quantity.')
     m4.metric('Complete BOM and quantities', show_percent(evaluation['exact_quantity']), help='Share of covered test sheets where every component and its summed quantity matched exactly.')
     st.caption(f"Test: {evaluation['covered']} of {evaluation['test']} held-out sheets had comparable training references ({evaluation['train']} training sheets). Sheets with missing linked BOMs, missing quantities or negative quantities are excluded. Shared production orders and identical code sets are kept in the same split; other relationships may remain. Results are historical aggregates, not a probability for this checklist.")
+    st.markdown('**Proposed pilot target: 90% for both component precision and recall**')
+    st.caption('Precision measures how many suggested parts were present; recall measures how many recorded parts were suggested. Quantities and whole-BOM matches are reported separately above. This historical test is not technical acceptance: approved independent OCL/BOM cases, quantity definitions and thresholds still require agreement.')
+    p, r = evaluation['precision'], evaluation['recall']
+    if p is None or r is None:
+        st.warning('The proposed 90% pilot target cannot be assessed because the required historical metrics are unavailable.')
+    elif p >= 0.9 and r >= 0.9:
+        st.info('Both proposed thresholds were reached in this historical test only. This does not approve any BOM or replace independent technical validation.')
+    else:
+        st.error('The proposed pilot target is not reached in this historical test: component precision ' + show_percent(p) + ', component recall ' + show_percent(r) + '. Do not use these results as a production BOM.')
 except Exception as exc:
     st.warning(f'BOM candidate or its historical test could not be prepared: {exc}')
 st.subheader('Historical model performance')
