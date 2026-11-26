@@ -20,11 +20,13 @@ class BOMXMLTest(unittest.TestCase):
         self.assertEqual(root.find('./NetComponents/Component/NetQuantity').text, '0')
 
     def test_candidate_states_flat_unknown_and_lists_references(self):
-        rows = pd.DataFrame([{'Item code': '123', 'Suggested quantity': 2, 'Review alert': 'CHECK'}])
+        rows = pd.DataFrame([{'Item code': '123', 'Suggested quantity': 2, 'Review alert': 'CHECK', 'Machine BOM source evidence': 'Found in historical machine BOM'}])
         refs = [(0.75, {'sheet': '4/26', 'orders': {'P1', 'P2'}})]
-        root = ET.fromstring(historical_candidate_xml({'variant': 'FBCA0000'}, rows, refs))
+        root = ET.fromstring(historical_candidate_xml({'variant': 'FBCA0000', 'technical_machine_candidate_unverified': 'M1'}, rows, refs))
         self.assertEqual(root.find('CandidateComponents').attrib['hierarchy'], 'flat_unknown')
         self.assertEqual(root.find('./CandidateComponents/Component/ReviewAlert').text, 'CHECK')
+        self.assertEqual(root.find('./CandidateComponents/Component/MachineBOMSourceEvidence').text, 'Found in historical machine BOM')
+        self.assertEqual(root.find('./OrderConfiguration/TechnicalMachineCandidateUnverified').text, 'M1')
         self.assertEqual(root.find('./HistoricalReferences/Reference/ProductionSheet').text, '4/26')
 
     def test_reference_keeps_duplicate_lines_and_missing_orders(self):

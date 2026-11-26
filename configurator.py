@@ -335,6 +335,7 @@ configuration_export = {'input_source': 'checklist_pdf' if f else ('purchase_ord
     'purchase_order_sha256': hashlib.sha256(purchase_order.getvalue()).hexdigest() if purchase_order else None,
     'detected_pdf_codes': sorted(detected_codes) if f else [],
     'variant': selected_variant, 'electrical_connection': selected_connection, 'options': selected_options,
+    'technical_machine_candidate_unverified': unique_machine_candidate,
     'additional_details_not_used_in_bom': {'control_panel': control_panel, 'closing_panelling': panelling,
         'installation_type': installation, 'drain_position': drain_position, 'drain_diameter': drain_diameter,
         'power': power, 'installation_country': installation_country, 'destination_country': destination_country,
@@ -415,6 +416,29 @@ with st.expander('Review required BP 100 HE details and technical BOM combinatio
 st.error('BOM ALERT ? NOT APPROVED FOR PRODUCTION. All BOM results are exploratory. Missing, extra or incorrect components and quantities cannot be ruled out; engineering must review them against the approved configuration and source BOMs.')
 st.subheader('BOM candidate from historical orders')
 st.caption('Components and quantities observed in similar orders. Review every line before use.')
+if checklist_notes.strip():
+    from note_review import item_mentions
+    mentions = item_mentions(checklist_notes)
+    st.warning('ORDER NOTE REQUIRES REVIEW: checklist notes are not automatically applied to the BOM. A person must decide whether parts or quantities need to be added, removed or changed.')
+    if mentions:
+        st.caption('Possible item and quantity mentions copied literally from the notes. These are not validated item codes or instructions and were not added to the BOM.')
+        st.dataframe(pd.DataFrame(mentions).rename(columns={'item': 'Possible item', 'quantity_text': 'Quantity mentioned', 'source': 'Exact note excerpt'}), hide_index=True, use_container_width=True)
+    if os.environ.get('BOM_LOCAL_LLM_TEST') == '1':
+        with st.expander('Optional local LLM note review', expanded=False):
+            st.warning('This sends the entered note to Ollama on the app server only after you click the button. Use approved or anonymised data. Results require human review and do not change the BOM.')
+            note_model = st.text_input('Approved local model for note review', value='llama3.2:1b', key='local_note_model')
+            if st.button('Analyse note with local LLM', key='run_local_note_llm'):
+                try:
+                    from local_note_llm import analyse_note
+                    with st.spinner('Analysing the note locally...'):
+                        llm_mentions = analyse_note(checklist_notes, note_model)
+                    if llm_mentions:
+                        st.dataframe(pd.DataFrame(llm_mentions), hide_index=True, use_container_width=True)
+                        st.warning('Literal matches do not establish whether an item must be added, removed or replaced. Nothing was applied to the BOM.')
+                    else:
+                        st.info('No item mentions with exact note evidence were returned. Review the full note manually.')
+                except (ValueError, RuntimeError) as exc:
+                    st.error(str(exc))
 try:
     from bom_proposal import build_examples, propose, backtest
     @st.cache_data(show_spinner='Preparing and testing historical BOM candidates...')
@@ -428,12 +452,19 @@ try:
         candidate_df['Unit of measure'] = 'Not available'
         candidate_df['BOM level'] = 'Not available'
         candidate_df['Rule ID'] = 'Not available'
+        from experimental_reference_matching import machine_tree_item_codes
+        source_items = machine_tree_item_codes(data['technical'], unique_machine_candidate)
+        if source_items is None:
+            candidate_df['Machine BOM source evidence'] = 'Not checked'
+        else:
+            candidate_df['Machine BOM source evidence'] = candidate_df['Item code'].map(lambda code: 'Found in historical machine BOM' if code in source_items else 'Not found in machine BOM; may come from an option')
+            st.caption('Source evidence uses the single unverified historical machine-code candidate across all recorded BOM levels. It does not validate revision, quantity, production applicability or option BOMs; items not found may still be required.')
         candidate_df['Review alert'] = candidate_df.apply(lambda r: 'CHECK: component absent from some references; quantity differs' if r['Observed in'] < r['References'] and r['Quantity agreement'] < r['Observed in'] else ('CHECK: component absent from some references' if r['Observed in'] < r['References'] else ('CHECK: historical quantities differ' if r['Quantity agreement'] < r['Observed in'] else 'UNVERIFIED: engineering review required')), axis=1)
         component_risks = (candidate_df['Observed in'] < candidate_df['References']).sum()
         quantity_risks = (candidate_df['Quantity agreement'] < candidate_df['Observed in']).sum()
         if component_risks or quantity_risks:
             st.error(f'BOM ALERT ? {component_risks} component(s) are absent from at least one reference; {quantity_risks} have differing historical quantities. These are risk indicators, not proof of an error.')
-        candidate_df = candidate_df[['Item code', 'Description', 'Suggested quantity', 'Unit of measure', 'BOM level', 'Rule ID', 'Quantity agreement', 'Observed in', 'References', 'Quantity range', 'Review alert']]
+        candidate_df = candidate_df[['Item code', 'Description', 'Suggested quantity', 'Unit of measure', 'BOM level', 'Rule ID', 'Quantity agreement', 'Observed in', 'References', 'Quantity range', 'Machine BOM source evidence', 'Review alert']]
         st.warning('Exploratory candidate, not an approved or complete production BOM. Quantities are totals across the linked orders of each reference; order and machine quantities may differ. Verify each component and quantity against engineering data.')
         st.caption('A component is included when it appears in at least half of up to five same-variant historical references. The suggested quantity is the most common observed total; quantity agreement and range show disagreements.')
         st.caption('Unit of measure, BOM level and rule ID are not available for this historical candidate. No approved rule has been applied; do not treat an unavailable value as verified.')
@@ -443,6 +474,25 @@ try:
         from detailed_production_pdf import make_detailed_production_pdf
         detailed_pdf = make_detailed_production_pdf(production_sheet_data, configuration_export, candidates, candidate_df.to_dict('records'), candidate_references)
         st.download_button('Download detailed production sheet and BOM (PDF)', detailed_pdf, file_name='BP100_HE_production_sheet_and_BOM_DRAFT.pdf', mime='application/pdf', help='Draft production sheet with entered details, unverified technical-code candidates, historical references and BOM candidate positions.')
+        with st.expander('Experimental: compare references with matching connection and power', expanded=False):
+            st.warning('Exploratory comparison only. A stricter historical match did not improve both component metrics in the available held-out test and covered only some cases. Do not use it as an approved BOM or assume it is more accurate.')
+            st.caption('The test requires the same commercial electrical-connection code and power inferred from the historical machine description. Missing or ambiguous values are excluded. Technical codes, BOM validity, quantities and options still need engineering review.')
+            match_key = 'experimental_match_' + hashlib.sha256(json.dumps([sorted(selected_codes), power]).encode()).hexdigest()
+            if st.button('Compare stricter historical match', key='run_match_'+pdf_key):
+                from experimental_reference_matching import attach_historical_power, propose_matched
+                historical_with_power = attach_historical_power(bom_records, headers)
+                st.session_state[match_key] = propose_matched(set(selected_codes), power, historical_with_power, bom_descriptions)
+            comparison = st.session_state.get(match_key)
+            if comparison is not None:
+                matched_items, matched_refs = comparison
+                if not matched_refs:
+                    st.warning('No references meet the stricter criteria. The test does not silently fall back or assume a match.')
+                else:
+                    baseline_codes = set(candidate_df['Item code'])
+                    matched_codes = {item['Item code'] for item in matched_items}
+                    st.write(f'{len(matched_refs)} matching historical references; {len(matched_codes - baseline_codes)} additional and {len(baseline_codes - matched_codes)} omitted component types relative to the current candidate.')
+                    st.dataframe(pd.DataFrame(matched_items), hide_index=True, use_container_width=True)
+                    st.caption('The comparison may include the current or related historical order. Different items or amounts are not proof of an error or improvement.')
         with st.expander('Show historical references used for this candidate'):
             st.dataframe(pd.DataFrame([{'Production sheet': row['sheet'], 'Code similarity': round(score*100, 1), 'Missing requested codes': ', '.join(sorted(set(selected_codes)-row['codes'])), 'Additional codes': ', '.join(sorted(row['codes']-set(selected_codes))), 'Production orders': ', '.join(sorted(row['orders']))} for score, row in candidate_references]), hide_index=True, use_container_width=True)
     else:

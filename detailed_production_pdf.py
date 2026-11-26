@@ -66,10 +66,14 @@ def make_detailed_production_pdf(sheet_data, configuration, machine_candidates, 
     add('PROPOSED BOM COMPONENTS - ALL POSITIONS REQUIRE ENGINEERING REVIEW')
     add('Format: item code | historical suggested quantity | observed / reference sheets')
     add('An asterisk identifies historical presence or quantity disagreement. All other rows also remain unverified.')
+    add('Where shown, machine-BOM source evidence is unverified and excludes separate option BOMs.')
     for item in components:
         marker = '*' if str(item.get('Review alert', '')).startswith('CHECK') else '-'
         add(f"{marker} {item.get('Item code', '-')} | qty {item.get('Suggested quantity', '-')} | {item.get('Observed in', '-')}/{item.get('References', '-')}")
         add(item.get('Description') or 'Description unavailable', indent='   ')
+        evidence = item.get('Machine BOM source evidence')
+        if evidence and evidence != 'Not checked':
+            add('Machine BOM source evidence: ' + str(evidence), indent='   ')
     if not components:
         add('No component suggestions are available.')
     add('')

@@ -32,6 +32,7 @@ def _configuration(root, config):
     node = ET.SubElement(root, 'OrderConfiguration')
     _element(node, 'MachineVariantCommercialCode', config.get('variant'))
     _element(node, 'ElectricalConnectionCommercialCode', config.get('electrical_connection'))
+    _element(node, 'TechnicalMachineCandidateUnverified', config.get('technical_machine_candidate_unverified'))
     options = ET.SubElement(node, 'CommercialOptions')
     for code in config.get('options', []):
         _element(options, 'CommercialOptionCode', code)
@@ -62,7 +63,7 @@ def historical_candidate_xml(config, candidates, references):
         for key, column in [('ItemCode', 'Item code'), ('Description', 'Description'), ('SuggestedQuantity', 'Suggested quantity'),
                             ('Unit', 'Unit of measure'), ('BOMLevel', 'BOM level'), ('RuleID', 'Rule ID'),
                             ('QuantityAgreement', 'Quantity agreement'), ('ObservedIn', 'Observed in'), ('References', 'References'),
-                            ('QuantityRange', 'Quantity range'), ('ReviewAlert', 'Review alert')]:
+                            ('QuantityRange', 'Quantity range'), ('MachineBOMSourceEvidence', 'Machine BOM source evidence'), ('ReviewAlert', 'Review alert')]:
             _element(line, key, row.get(column))
     return _xml(root)
 
