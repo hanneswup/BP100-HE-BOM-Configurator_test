@@ -1,3 +1,4 @@
+# Deployment refresh: dashboard is displayed before checklist upload.
 from pathlib import Path
 from io import BytesIO
 import base64
