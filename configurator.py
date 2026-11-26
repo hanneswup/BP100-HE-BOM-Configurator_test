@@ -423,7 +423,7 @@ try:
         return records, descriptions, backtest(records, descriptions)
     bom_records, bom_descriptions, evaluation = prepare_bom_candidate_data(data['assoc'], data['links'], data['bom'])
     candidate, candidate_references = propose(set(selected_codes), bom_records, bom_descriptions)
-    if candidate_references:
+    if candidate_references and candidate:
         candidate_df = pd.DataFrame(candidate)
         candidate_df['Unit of measure'] = 'Not available'
         candidate_df['BOM level'] = 'Not available'
@@ -440,10 +440,16 @@ try:
         st.dataframe(candidate_df, hide_index=True, use_container_width=True)
         st.download_button('Download BOM candidate as CSV', candidate_df.to_csv(index=False).encode('utf-8-sig'), file_name='BP100_HE_BOM_candidate.csv', mime='text/csv')
         st.download_button('Download BOM candidate (XML)', historical_candidate_xml(configuration_export, candidate_df, candidate_references), file_name='BP100_HE_BOM_candidate_DRAFT.xml', mime='application/xml', help='Historical candidate and reference orders; component hierarchy and quantities are unverified.')
+        from detailed_production_pdf import make_detailed_production_pdf
+        detailed_pdf = make_detailed_production_pdf(production_sheet_data, configuration_export, candidates, candidate_df.to_dict('records'), candidate_references)
+        st.download_button('Download detailed production sheet and BOM (PDF)', detailed_pdf, file_name='BP100_HE_production_sheet_and_BOM_DRAFT.pdf', mime='application/pdf', help='Draft production sheet with entered details, unverified technical-code candidates, historical references and BOM candidate positions.')
         with st.expander('Show historical references used for this candidate'):
             st.dataframe(pd.DataFrame([{'Production sheet': row['sheet'], 'Code similarity': round(score*100, 1), 'Missing requested codes': ', '.join(sorted(set(selected_codes)-row['codes'])), 'Additional codes': ', '.join(sorted(row['codes']-set(selected_codes))), 'Production orders': ', '.join(sorted(row['orders']))} for score, row in candidate_references]), hide_index=True, use_container_width=True)
     else:
         st.info('No usable historical BOMs for the selected machine variant were found.')
+        from detailed_production_pdf import make_detailed_production_pdf
+        detailed_pdf = make_detailed_production_pdf(production_sheet_data, configuration_export, candidates, [], candidate_references)
+        st.download_button('Download detailed production sheet (PDF)', detailed_pdf, file_name='BP100_HE_production_sheet_DRAFT.pdf', mime='application/pdf', help='No usable BOM candidate was found; the PDF states that BOM positions are unavailable.')
     def show_percent(value):
         return f'{value:.0%}' if value is not None else '—'
     st.markdown('**Historical test of this candidate method**')
