@@ -11,7 +11,14 @@ import streamlit as st
 from pypdf import PdfReader
 from checklist_codes import extract_codes, extract_visual_codes, extract_rev08_form_values, extract_rev08_connection
 from bom_xml import engineering_tree_xml, historical_candidate_xml, technical_preview_xml, historical_reference_xml
-from dashboard_tree import render_dashboard_tree, summarize_source_tree
+import importlib
+import dashboard_tree
+
+# Streamlit reruns the main script after deployments but may retain imported
+# modules in memory. Reload the tree module so both files use the same version.
+dashboard_tree = importlib.reload(dashboard_tree)
+render_dashboard_tree = dashboard_tree.render_dashboard_tree
+summarize_source_tree = dashboard_tree.summarize_source_tree
 
 DATA = Path(__file__).resolve().parent / 'Data' / 'Excel'
 st.set_page_config(page_title='BP100 HE BOM Configurator', layout='wide')
