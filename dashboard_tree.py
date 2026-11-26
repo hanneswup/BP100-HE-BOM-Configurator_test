@@ -16,13 +16,35 @@ def _leaf(label, value=None):
 
 
 def _source_component(node):
-    label = (node.findtext('ItemCode') or 'Unknown item') + ' | ' + (node.findtext('Description') or 'Description unavailable')
+    level = node.get('level') or '?'
+    item = node.findtext('ItemCode') or 'Unknown item'
+    father = node.findtext('SourceParentCode') or 'Not available'
+    label = 'Level ' + level + ' | ' + item + ' | ' + (node.findtext('Description') or 'Description unavailable')
     quantity = node.findtext('Quantity') or 'Not available'
     label += ' | source qty: ' + quantity
     if node.get('parentCheck') != 'match':
         label += ' | source parent mismatch: review'
     children = node.findall('Component')
-    return _branch(label, ''.join(_source_component(child) for child in children)) if children else _leaf(label)
+    body = (_leaf('Father / parent code', father)
+            + _leaf('Child / item code', item)
+            + _leaf('Source level', level)
+            + _leaf('Quantity from source', quantity)
+            + _leaf('Unit', 'Not available in source export')
+            + _leaf('Sequence', node.findtext('Sequence') or 'Not available')
+            + _leaf('Production BOM flag', node.findtext('ProductionBOMFlag') or 'Not available')
+            + _leaf('Valid from (not checked)', node.findtext('ValidFrom') or 'Not available')
+            + _leaf('Valid to (not checked)', node.findtext('ValidTo') or 'Not available'))
+    if children:
+        body += _branch('Children / subcomponents (' + str(len(children)) + ')', ''.join(_source_component(child) for child in children), opened=True)
+    return _branch(label, body)
+
+
+def summarize_source_tree(source_xml):
+    root = ET.fromstring(source_xml)
+    nodes = root.findall('./SourceBOMs/SourceBOM//Component')
+    return {'components': len(nodes),
+            'max_level': max((int(node.get('level', '0')) for node in nodes), default=0),
+            'parent_mismatches': sum(node.get('parentCheck') != 'match' for node in nodes)}
 
 
 def render_dashboard_tree(configuration, candidates, candidate_rows=None, references=None, evaluation=None, source_xml=None, source_error=None):
@@ -52,7 +74,8 @@ def render_dashboard_tree(configuration, candidates, candidate_rows=None, refere
         source_body = ''
         for bom in source_boms:
             children = ''.join(_source_component(node) for node in bom.findall('Component'))
-            source_body += _branch('Historical source BOM ' + (bom.get('code') or 'unknown'), children or _leaf('No source components found'))
+            description = bom.findtext('Description') or 'Description unavailable'
+            source_body += _branch('Historical source BOM ' + (bom.get('code') or 'unknown') + ' | ' + description, children or _leaf('No source components found'), opened=True)
         source_body += _leaf('Source levels, quantities and applicability are not approved or validated')
     elif source_error:
         source_body = _leaf('Source tree unavailable', source_error)
@@ -85,7 +108,7 @@ def render_dashboard_tree(configuration, candidates, candidate_rows=None, refere
 
     body = (_branch('Order and configuration', config_body)
             + _branch(f'Technical machine-code candidates ({len(candidates)})', candidate_body)
-            + _branch('Technical source BOM - recorded hierarchy', source_body)
+            + _branch('Technical source BOM - recorded father / child hierarchy', source_body, opened=bool(source_xml))
             + _branch('BOM candidate - flat historical suggestions', proposal_body)
             + _branch('Historical references', refs_body)
             + _branch('Historical test and 90% target', evaluation_body))

@@ -11,7 +11,7 @@ import streamlit as st
 from pypdf import PdfReader
 from checklist_codes import extract_codes, extract_visual_codes, extract_rev08_form_values, extract_rev08_connection
 from bom_xml import engineering_tree_xml, historical_candidate_xml, technical_preview_xml, historical_reference_xml
-from dashboard_tree import render_dashboard_tree
+from dashboard_tree import render_dashboard_tree, summarize_source_tree
 
 DATA = Path(__file__).resolve().parent / 'Data' / 'Excel'
 st.set_page_config(page_title='BP100 HE BOM Configurator', layout='wide')
@@ -38,7 +38,7 @@ h1, h2, h3 { color: #102f40 !important; letter-spacing: -.025em; }
 .dashboard-title .dash-eyebrow { color: #2f886b; font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
 .dashboard-title .dash-name { color: #173c52; font-size: 23px; font-weight: 700; line-height: 1.25; margin-top: 4px; }
 .dashboard-title .dash-subtitle { color: #647b88; font-size: 13px; margin-top: 4px; }
-.bom-tree { background: white; border: 1px solid #dce7e8; border-radius: 8px; padding: 14px 18px; margin: 8px 0 16px; font-size: 14px; }
+.bom-tree { background: white; border: 1px solid #dce7e8; border-radius: 8px; padding: 14px 18px; margin: 8px 0 16px; font-size: 14px; max-height: 650px; overflow: auto; }
 .bom-tree ul { list-style: none; margin: 0; padding-left: 18px; border-left: 1px solid #d8e4e7; }
 .bom-tree > ul { padding-left: 0; border-left: 0; }
 .bom-tree li { padding: 3px 0 3px 9px; color: #315264; overflow-wrap: anywhere; }
@@ -121,7 +121,7 @@ with st.expander('Pilot testing: record feedback', expanded=False):
     feedback_template = pd.DataFrame(columns=['Test case ID', 'OCL revision', 'Machine variant', 'Expected machine code', 'Suggested machine code', 'OCL field or BOM item', 'Expected value', 'Actual value', 'Issue or feedback', 'Source / reference', 'Reviewer', 'Status'])
     st.download_button('Download pilot feedback template (CSV)', feedback_template.to_csv(index=False).encode('utf-8-sig'), file_name='BP100_HE_pilot_feedback_template.csv', mime='text/csv')
 st.subheader('01 · Choose the order information')
-input_mode = st.radio('Order input', ['Upload checklist PDF', 'Purchase order without checklist', 'Enter configuration manually'], horizontal=True, label_visibility='collapsed')
+input_mode = st.radio('Order input', ['Upload checklist PDF', 'Purchase order without checklist', 'Enter configuration manually', 'Explore technical BOM without order'], horizontal=True, label_visibility='collapsed')
 f = None
 form_values = {}
 purchase_order = None
@@ -131,7 +131,7 @@ if input_mode == 'Purchase order without checklist':
     if purchase_order:
         st.caption('Reference attached: ' + purchase_order.name + '. It remains in this session and is not included in the download.')
     pdf_ready = True
-elif input_mode == 'Enter configuration manually':
+elif input_mode in ('Enter configuration manually', 'Explore technical BOM without order'):
     pdf_ready = True
 else:
     f = st.file_uploader('Drag and drop a checklist PDF',type='pdf', key='ocl_upload')
@@ -197,6 +197,8 @@ if f and os.environ.get('BOM_LOCAL_LLM_TEST') == '1':
                 st.error(str(exc))
 if input_mode == 'Enter configuration manually':
     st.info('Enter the variant, electrical connection and selected options from the available order information below.')
+elif input_mode == 'Explore technical BOM without order':
+    st.info('Choose any technical source BOM in the dashboard to explore its recorded father / child structure. No order is needed; the source BOM is not automatically approved for production.')
 elif input_mode == 'Purchase order without checklist':
     st.caption('If the purchase order does not specify a required selection, obtain clarification before proceeding. No unspecified option is inferred.')
 elif visual_codes is not None:
@@ -223,7 +225,7 @@ connection_names = {f'FBCA{201+i:04d}':name for i,name in enumerate(connection_l
 option_labels = ['Wall installation for toilet bowl connection','LCD display control panel','High pressure washing technology','AISI 316L chamber','Device main switch','HEPA H14 air filtering','Electrical heated drying and cooling','Chemical dosing pump','Infra-red switch (LED)','Infra-red switch (LCD)','Emergency stop button','ST1 external printer','RS232 port','Independent monitoring system','Manual emptier conversion kit','Flushing kit','USB predisposition']
 option_names = {f'FBCA{1000+i:04d}':name for i,name in enumerate(option_labels)}
 options = [c for c in all_codes if c.startswith('FBCA1')]
-pdf_key = hashlib.sha256(f.getvalue()).hexdigest() if f else ('po_' + hashlib.sha256(purchase_order.getvalue()).hexdigest() if purchase_order else ('po_manual' if input_mode == 'Purchase order without checklist' else 'manual'))
+pdf_key = hashlib.sha256(f.getvalue()).hexdigest() if f else ('po_' + hashlib.sha256(purchase_order.getvalue()).hexdigest() if purchase_order else ('po_manual' if input_mode == 'Purchase order without checklist' else ('browse' if input_mode == 'Explore technical BOM without order' else 'manual')))
 detected_variants = sorted(detected_codes.intersection(variant_codes))
 detected_connections = sorted(detected_codes.intersection(connections))
 detected_options = sorted(detected_codes.intersection(options))
@@ -238,11 +240,13 @@ if not detected_codes and input_mode == 'Upload checklist PDF':
     st.warning('No explicit commercial codes could be mapped from the interactive PDF fields. Select the configuration manually; printed option lists are not treated as selections.')
 selection_label = ('Change or add checklist selections' if auto_recognized else
                    'Complete missing checklist selections' if f else 'Enter or change checklist selections')
+if input_mode == 'Explore technical BOM without order':
+    selection_label = 'Optional order configuration (not required for source BOM browsing)'
 detail_keys = ['panel_', 'installation_', 'drain_', 'diameter_', 'power_']
 missing_saved_details = any(not st.session_state.get(key + pdf_key) for key in detail_keys)
 if st.session_state.get('panel_' + pdf_key) == 'LCD':
     missing_saved_details = missing_saved_details or not st.session_state.get('panel_language_' + pdf_key, '').strip()
-with st.expander(selection_label, expanded=not auto_recognized or missing_saved_details):
+with st.expander(selection_label, expanded=(not auto_recognized or missing_saved_details) and input_mode != 'Explore technical BOM without order'):
     st.caption('Enter or change selections from the available order information. The PDF itself is not modified; the selections below determine the results shown by this app.')
     col_variant,col_power = st.columns(2)
     with col_variant:
@@ -288,17 +292,26 @@ with dashboard_slot:
     d2.metric('Historical machine-code candidates', len(candidates), help='Candidates are unverified; even one match is not an approved technical code.')
     d3.metric('Checklist notes', 'Entered' if checklist_notes.strip() else 'Not entered', help='Not entered does not prove that the original OCL has no notes.')
     d4.metric('Release status', 'Not approved', help='Engineering review remains required for every proposal.')
-    if missing_inputs:
+    if missing_inputs and input_mode != 'Explore technical BOM without order':
         st.warning('Missing required fields: ' + ', '.join(missing_inputs) + '.')
     st.caption('Per-order BOM accuracy: not measured. Options, packaging, notes and the technical code still require review; a complete field count does not establish correctness.')
-    st.markdown('**Explore the order and BOM tree**')
-    source_tree_code = None
-    if candidates:
-        source_tree_code = st.selectbox('Inspect a historical technical source BOM (optional)', [item['code'] for item in candidates], index=None, placeholder='Choose an unverified technical candidate', key='dashboard_source_tree_'+pdf_key, help='The tree shows source BOM levels only; it does not establish applicability, valid quantities or option BOM selection.')
+    st.markdown('**Explore the father / child BOM tree**')
+    from bom_assembly import technical_roots
+    dashboard_root_frame = technical_roots(data['technical'])
+    dashboard_root_labels = dict(zip(dashboard_root_frame['Item Code'], dashboard_root_frame['Item Code Description']))
+    dashboard_roots = sorted(dashboard_root_labels)
+    default_source_index = dashboard_roots.index(unique_machine_candidate) if unique_machine_candidate in dashboard_roots else None
+    source_tree_code = st.selectbox('Technical source BOM: machine or option', dashboard_roots, index=default_source_index, placeholder='Choose a technical BOM code', key='dashboard_source_tree_'+pdf_key, format_func=lambda code: code + ' | ' + dashboard_root_labels[code], help='Browse all technical source BOMs. A suggested default is unverified and does not establish applicability, valid quantities or option selection.')
     source_tree_xml, source_tree_error = None, None
     if source_tree_code:
         try:
             source_tree_xml = engineering_tree_xml(data['technical'], [source_tree_code])
+            source_summary = summarize_source_tree(source_tree_xml)
+            st.caption(f"Source tree: {source_summary['components']} positions across {source_summary['max_level']} recorded levels. Repeated item codes remain separate under their source parents.")
+            if source_summary['parent_mismatches']:
+                st.warning(f"{source_summary['parent_mismatches']} source position(s) have a missing or inconsistent parent code. Review the flagged branches; the tree follows source ordering and levels.")
+            st.download_button('Download selected source BOM hierarchy (XML)', source_tree_xml, file_name='BP100_HE_source_BOM_tree_DRAFT.xml', mime='application/xml')
+            st.caption('Expand the tree below to inspect each father, child, source quantity and available sublevels. Quantities and applicability are unverified.')
         except ValueError as exc:
             source_tree_error = str(exc)
     dashboard_tree_config = {'variant': variant_names.get(selected_variant, selected_variant),
@@ -308,6 +321,8 @@ with dashboard_slot:
         'options': [code + ' | ' + option_names.get(code, 'Other option') for code in selected_options]}
     dashboard_tree_placeholder = st.empty()
     dashboard_tree_placeholder.markdown(render_dashboard_tree(dashboard_tree_config, candidates, source_xml=source_tree_xml, source_error=source_tree_error), unsafe_allow_html=True)
+if input_mode == 'Explore technical BOM without order':
+    st.stop()
 st.markdown('**Historical technical machine-code candidates**')
 if candidates:
     st.dataframe(pd.DataFrame([{'Technical code': item['code'], 'Description': item['description'], 'Historical production sheets': ', '.join(item['sheets'])} for item in candidates]), hide_index=True, use_container_width=True)

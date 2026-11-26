@@ -3,7 +3,7 @@ import unittest
 import pandas as pd
 
 from bom_xml import engineering_tree_xml
-from dashboard_tree import render_dashboard_tree
+from dashboard_tree import render_dashboard_tree, summarize_source_tree
 
 
 class DashboardTreeTests(unittest.TestCase):
@@ -27,6 +27,21 @@ class DashboardTreeTests(unittest.TestCase):
         self.assertIn('B |', html)
         self.assertIn('source parent mismatch: review', html)
         self.assertIn('source qty: -2', html)
+        self.assertIn('Father / parent code', html)
+        self.assertIn('Child / item code', html)
+        self.assertIn('Children / subcomponents (1)', html)
+        self.assertEqual(summarize_source_tree(xml), {'components': 2, 'max_level': 2, 'parent_mismatches': 1})
+
+    def test_repeated_child_occurrences_remain_separate(self):
+        frame = pd.DataFrame([{'Level': '0', 'Item Code': 'M'},
+                              {'Level': '1', 'Father Code': 'M', 'Item Code': 'A'},
+                              {'Level': ' . 2', 'Father Code': 'A', 'Item Code': 'X'},
+                              {'Level': '1', 'Father Code': 'M', 'Item Code': 'B'},
+                              {'Level': ' . 2', 'Father Code': 'B', 'Item Code': 'X'}])
+        xml = engineering_tree_xml(frame, ['M'])
+        html = render_dashboard_tree({}, [], source_xml=xml)
+        self.assertEqual(html.count('Level 2 | X |'), 2)
+        self.assertEqual(summarize_source_tree(xml)['components'], 4)
 
     def test_unknown_inputs_are_not_claimed_as_absent_or_approved(self):
         html = render_dashboard_tree({}, [])
