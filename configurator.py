@@ -32,6 +32,10 @@ h1, h2, h3 { color: #102f40 !important; letter-spacing: -.025em; }
 [data-testid="stMetric"] { background: #fff; border: 1px solid #dce7e8; border-radius: 12px; padding: 19px; box-shadow: 0 2px 10px rgba(22,62,72,.04); }
 [data-testid="stMetricLabel"] { color: #526d78; }
 [data-testid="stMetricValue"] { color: #284a98; }
+.dashboard-title { background: white; border-left: 5px solid #2f886b; padding: 18px 22px; margin: 12px 0 14px; box-shadow: 0 2px 8px rgba(22,62,72,.06); }
+.dashboard-title .dash-eyebrow { color: #2f886b; font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.dashboard-title .dash-name { color: #173c52; font-size: 23px; font-weight: 700; line-height: 1.25; margin-top: 4px; }
+.dashboard-title .dash-subtitle { color: #647b88; font-size: 13px; margin-top: 4px; }
 .stTabs [data-baseweb="tab-list"] { gap: 4px; border-bottom: 1px solid #d5e1e3; }
 .stTabs [data-baseweb="tab"] { color: #536d78; padding: 10px 16px; }
 .stTabs [aria-selected="true"] { color: #007c79 !important; border-bottom-color: #00958e !important; }
@@ -260,7 +264,8 @@ candidates = machine_candidates(data['headers'], data['assoc'], selected_variant
 unique_machine_candidate = candidates[0]['code'] if len(candidates) == 1 else None
 dashboard_slot = st.container()
 with dashboard_slot:
-    st.subheader('Order and pilot overview')
+    st.markdown('''<div class="dashboard-title"><div class="dash-eyebrow">BP 100 HE &nbsp; | &nbsp; Pilot dashboard</div><div class="dash-name">Order and BOM quality overview</div><div class="dash-subtitle">Current order status and historical test results</div></div>''', unsafe_allow_html=True)
+    st.markdown('**Current order · review status**')
     d1, d2, d3, d4 = st.columns(4)
     d1.metric('Required fields entered', f'{len(required_inputs) - len(missing_inputs)}/{len(required_inputs)}', help='Only the current prototype checks are counted; this is not proof that the complete OCL was read.')
     d2.metric('Historical machine-code candidates', len(candidates), help='Candidates are unverified; even one match is not an approved technical code.')
@@ -520,6 +525,20 @@ try:
         m2.metric('Component completeness', show_percent(evaluation['recall']), help='Share of component types in the held-out historical BOMs that were suggested.')
         m3.metric('Quantity agreement', show_percent(evaluation['quantity_accuracy']), help='Only among correctly suggested components: share with an exactly matching historical summed quantity.')
         m4.metric('Complete BOM with quantities', show_percent(evaluation['exact_quantity']), help='Share of covered historical test sheets where all components and summed quantities matched exactly.')
+        chart_col, coverage_col = st.columns([2.2, 1])
+        with chart_col:
+            st.markdown('**Component results vs. proposed target**')
+            from pilot_dashboard import historical_performance_chart
+            performance_chart = historical_performance_chart(evaluation)
+            if performance_chart is not None:
+                st.altair_chart(performance_chart, use_container_width=True)
+                st.caption('Blue: historical test result · Gold dashed line: proposed 90% target.')
+            else:
+                st.info('Component metrics are unavailable for this historical test.')
+        with coverage_col:
+            st.markdown('**Historical test coverage**')
+            st.metric('Comparable held-out sheets', f"{evaluation['covered']} / {evaluation['test']}", help='Cases with at least one comparable training reference; excluded source records are not included.')
+            st.caption(f"Training sheets: {evaluation['train']}. Quantity agreement only covers correctly suggested components.")
         st.caption(f"Historical coverage: {evaluation['covered']} of {evaluation['test']} held-out sheets had comparable training references ({evaluation['train']} training sheets). Sheets with missing linked BOMs, missing quantities or negative quantities are excluded. Shared production orders and identical code sets are grouped; other relationships may remain. These are aggregate historical results, not accuracy or probability for the current order.")
         st.markdown('**Proposed pilot target: 90% for both component precision and completeness**')
         st.caption('Quantities and complete BOMs are measured separately. The target and acceptance criteria still require agreement and independent, approved OCL/BOM test cases.')
