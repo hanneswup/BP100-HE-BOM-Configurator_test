@@ -8,7 +8,7 @@ import os
 import pandas as pd
 import streamlit as st
 from pypdf import PdfReader
-from checklist_codes import extract_codes, extract_visual_codes, extract_rev08_form_values
+from checklist_codes import extract_codes, extract_visual_codes, extract_rev08_form_values, extract_rev08_connection
 from bom_xml import engineering_tree_xml, historical_candidate_xml, technical_preview_xml, historical_reference_xml
 
 DATA = Path(__file__).resolve().parent / 'Data' / 'Excel'
@@ -130,6 +130,15 @@ else:
             if form_values.get('variant'):
                 detected_codes.add(form_values['variant'])
             try:
+                interactive_connection = extract_rev08_connection(reader, fields, f.getvalue(), header_text)
+            except Exception:
+                interactive_connection = None
+            if interactive_connection:
+                detected_codes.add(interactive_connection)
+            note_field = fields.get('Notes') or {}
+            if str(note_field.get('/FT')) == '/Tx' and note_field.get('/V'):
+                form_values['notes'] = str(note_field['/V']).strip()
+            try:
                 visual_codes = extract_visual_codes(f.getvalue())
             except Exception:
                 visual_codes = None
@@ -172,8 +181,12 @@ elif input_mode == 'Purchase order without checklist':
 elif visual_codes is not None:
     st.success('Supported configuration codes read from the checklist: ' + ', '.join(sorted(visual_codes)))
     st.caption('Supported BP 100 HE revision 07/08 code selections were read. Other details and notes may still need to be entered.')
+    if not fields:
+        st.warning('This PDF has no readable interactive form fields. Handwritten or flattened order details and notes may be invisible to text extraction. Inspect the original PDF and enter all relevant notes and details manually; they may change the BOM.')
 else:
     st.warning('Automatic checkbox recognition was not reliable for this PDF. Select the configuration below.')
+    if f and interactive_connection:
+        st.warning('The interactive machine and connection fields may be prefilled, but option selections have not been read completely. Check every option and any notes against the original PDF.')
 try: data=load()
 except Exception as exc: st.error(f'Unable to load input data: {exc}'); st.stop()
 headers=data['headers']
@@ -221,10 +234,10 @@ with st.expander(selection_label, expanded=not auto_recognized or missing_saved_
     detail_left, detail_right = st.columns(2)
     with detail_left:
         control_panel = st.selectbox('Control panel *', ['LED', 'LCD'], index=['LED', 'LCD'].index(form_values['control_panel']) if form_values.get('control_panel') in ['LED', 'LCD'] else None, placeholder='Not specified', key='panel_'+pdf_key)
-        panelling = st.selectbox('Closing panelling', ['No', 'Yes'], index=None, placeholder='Not specified', key='panelling_'+pdf_key)
+        panelling = st.selectbox('Closing panelling', ['No', 'Yes'], index=['No', 'Yes'].index(form_values['panelling']) if form_values.get('panelling') in ['No', 'Yes'] else None, placeholder='Not specified', key='panelling_'+pdf_key)
         installation = st.selectbox('Installation type *', ['Stand Alone', 'Recessed wall'], index=['Stand Alone', 'Recessed wall'].index(form_values['installation']) if form_values.get('installation') in ['Stand Alone', 'Recessed wall'] else None, placeholder='Not specified', key='installation_'+pdf_key)
-        drain_position = st.selectbox('Drain position *', ['To the wall', 'To the floor'], index=None, placeholder='Not specified', key='drain_'+pdf_key)
-        drain_diameter = st.selectbox('Drain diameter *', ['90 mm', '110 mm'], index=None, placeholder='Not specified', key='diameter_'+pdf_key)
+        drain_position = st.selectbox('Drain position *', ['To the wall', 'To the floor'], index=['To the wall', 'To the floor'].index(form_values['drain_position']) if form_values.get('drain_position') in ['To the wall', 'To the floor'] else None, placeholder='Not specified', key='drain_'+pdf_key)
+        drain_diameter = st.selectbox('Drain diameter *', ['90 mm', '110 mm'], index=['90 mm', '110 mm'].index(form_values['drain_diameter']) if form_values.get('drain_diameter') in ['90 mm', '110 mm'] else None, placeholder='Not specified', key='diameter_'+pdf_key)
         power = st.selectbox('Power *', ['3.05 kW', '5.05 kW'], index=['3.05 kW', '5.05 kW'].index(form_values['power']) if form_values.get('power') in ['3.05 kW', '5.05 kW'] else None, placeholder='Not specified', key='power_'+pdf_key)
     with detail_right:
         customer = st.text_input('Customer', key='customer_'+pdf_key)
@@ -235,7 +248,7 @@ with st.expander(selection_label, expanded=not auto_recognized or missing_saved_
         packaging = st.text_input('Packaging', key='packaging_'+pdf_key, help='Packaging may require additional production BOM materials. The prototype does not add these automatically.')
         manual_language = st.text_input('User manual language', key='manual_language_'+pdf_key)
         panel_language = st.text_input('Control panel language (required for LCD)', key='panel_language_'+pdf_key, help='Production may need this information for software setup; its relation to software language must be confirmed.')
-        checklist_notes = st.text_area('Checklist notes', key='notes_'+pdf_key)
+        checklist_notes = st.text_area('Checklist notes', value=form_values.get('notes', ''), key='notes_'+pdf_key, help='Notes may affect the BOM and require technical review.')
 required_inputs = {'machine variant': selected_variant, 'electrical connection': selected_connection,
     'control panel': control_panel, 'installation type': installation, 'drain position': drain_position,
     'drain diameter': drain_diameter, 'power': power}

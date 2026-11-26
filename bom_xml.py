@@ -35,6 +35,9 @@ def _configuration(root, config):
     options = ET.SubElement(node, 'CommercialOptions')
     for code in config.get('options', []):
         _element(options, 'CommercialOptionCode', code)
+    details = config.get('additional_details_not_used_in_bom') or {}
+    _element(node, 'PackagingNotAppliedToBOM', details.get('packaging'))
+    _element(node, 'NotesRequiringReview', details.get('notes'))
 
 
 def _xml(root):

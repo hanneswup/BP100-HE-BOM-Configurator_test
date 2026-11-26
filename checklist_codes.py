@@ -113,6 +113,9 @@ def extract_rev08_form_values(fields, page_text):
         'Machine type': ('variant', ['FBCA0000', 'FBCA0001', 'FBCA0002']),
         'Control panel': ('control_panel', ['LED', 'LCD']),
         'Installation type': ('installation', ['Stand Alone', 'Recessed wall']),
+        'Drain position': ('drain_position', ['To the wall', 'To the floor']),
+        'Drain diameter': ('drain_diameter', ['90 mm', '110 mm']),
+        'Panelling': ('panelling', ['No', 'Yes']),
         'Power': ('power', ['3.05 kW', '5.05 kW']),
     }
     result = {}
@@ -140,3 +143,53 @@ def extract_rev08_form_values(fields, page_text):
         if len(selected) == 1:
             result[target] = choices[selected[0]]
     return result
+
+
+def extract_rev08_connection(reader, fields, pdf_bytes, header_text):
+    """Map the selected radio widget to a nearby printed connection code.
+
+    PDF radio state numbers are not commercial-code indices: on this template,
+    the last widget in the group appears between other widgets on the page.
+    """
+    if not re.search(r'BP\s*100\s*HE\s*Rev\.\s*08\b', header_text, re.I):
+        return None
+    field = fields.get('Electrical Connection')
+    if not field or str(field.get('/FT')) != '/Btn':
+        return None
+    value = str(field.get('/V') or '')
+    kids = field.get('/Kids', [])
+    if value in ('', '/Off') or len(kids) != 24:
+        return None
+    selected = []
+    for ref in kids:
+        widget = ref.get_object()
+        state = str(widget.get('/AS') or '/Off')
+        if state != '/Off':
+            on_states = [str(x) for x in (widget.get('/AP') or {}).get('/N', {}) if str(x) != '/Off']
+            if state != value or on_states != [value]:
+                return None
+            selected.append((ref, widget))
+    if len(selected) != 1:
+        return None
+    selected_ref, widget = selected[0]
+    page_indices = [i for i, page in enumerate(reader.pages) for annot in page.get('/Annots', [])
+                    if getattr(annot, 'idnum', None) == getattr(selected_ref, 'idnum', None)]
+    rect = widget.get('/Rect')
+    if len(page_indices) != 1 or not rect or len(rect) != 4:
+        return None
+    import pypdfium2 as pdfium
+    doc = pdfium.PdfDocument(BytesIO(pdf_bytes))
+    text_page = doc[page_indices[0]].get_textpage()
+    widget_y = (float(rect[1]) + float(rect[3])) / 2
+    matches = []
+    for number in range(201, 225):
+        code = f'FBCA{number:04d}'
+        search = text_page.search(code, match_case=True)
+        match = search.get_next()
+        if not match or search.get_next():
+            continue
+        text_page.count_rects(*match)
+        left, bottom, right, top = text_page.get_rect(0)
+        if right < float(rect[0]) and abs((bottom + top) / 2 - widget_y) <= 5:
+            matches.append(code)
+    return matches[0] if len(matches) == 1 else None
