@@ -4,6 +4,7 @@ import base64
 import hashlib
 import json
 import re
+import os
 import pandas as pd
 import streamlit as st
 from pypdf import PdfReader
@@ -145,6 +146,24 @@ else:
 if not pdf_ready:
     st.info('Upload a readable order checklist PDF to continue.')
     st.stop()
+if f and os.environ.get('BOM_LOCAL_LLM_TEST') == '1':
+    with st.expander('Experimental local LLM: analyse PDF text', expanded=False):
+        st.warning('Test only: use approved or anonymised documents. The extracted PDF text is sent to an Ollama server on this app server (127.0.0.1). Confirm the model runs locally under your IT policy. This does not read checkboxes or automatically change any selection.')
+        llm_model = st.text_input('Approved local Ollama model name', key='local_llm_model', placeholder='Enter an installed local model name')
+        if st.button('Analyse extracted PDF text', key='run_local_llm'):
+            try:
+                from local_llm_test import analyse_text
+                with st.spinner('Analysing PDF text locally...'):
+                    suggestions, truncated = analyse_text(content, llm_model)
+                if truncated:
+                    st.warning('Only the first 25,000 characters were analysed.')
+                st.warning('Unverified suggestions only. An exact quote does not prove an option was selected; compare every result with the document. Nothing was applied to the configuration or BOM.')
+                if suggestions:
+                    st.dataframe(pd.DataFrame(suggestions), hide_index=True, use_container_width=True)
+                else:
+                    st.info('No suggestions with exact text evidence were returned. Text-only analysis cannot establish checkbox states.')
+            except (ValueError, RuntimeError) as exc:
+                st.error(str(exc))
 if input_mode == 'Enter configuration manually':
     st.info('Enter the variant, electrical connection and selected options from the available order information below.')
 elif input_mode == 'Purchase order without checklist':
