@@ -99,8 +99,10 @@ def make_production_sheet(data):
         text(c, x, y, fit(code, 13), 6.5)
         text(c, x+60, y, fit(desc, 35), 6.5)
         text(c, x+225, y, '-', 6.5)
-    if not options: text(c,25,487,'No commercial options selected',7)
-    accessory_y = 475 - max(0, (len(options)+1)//2 - 1) * 9
+    if not options: text(c,25,487,'No commercial options entered; verify selection against OCL',7)
+    # Options are filled down the left column (up to nine rows), then down
+    # the right. Leave a clear gap below the lowest option before the next bar.
+    accessory_y = 470 - max(0, min(len(options), 9) - 1) * 9
     bar(c,accessory_y,'CESTI / ACCESSORI')
     text(c,25,accessory_y-11,'Articolo',7,True); text(c,85,accessory_y-11,'Descrizione',7,True); text(c,250,accessory_y-11,'Q.ta',7,True); text(c,276,accessory_y-11,'L.p.',7,True); text(c,303,accessory_y-11,'Articolo',7,True); text(c,363,accessory_y-11,'Descrizione',7,True); text(c,527,accessory_y-11,'Q.ta',7,True); text(c,554,accessory_y-11,'L.p.',7,True)
     text(c,25,accessory_y-22,'Not available - technical accessories are not determined',7)
